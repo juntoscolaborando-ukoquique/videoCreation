@@ -39,6 +39,8 @@ class Orientation(str, Enum):
 class ImageEngine(str, Enum):
     POLLINATIONS = "pollinations"
     HUGGINGFACE  = "huggingface"
+    CLOUDFLARE   = "cloudflare"
+    SILICONFLOW  = "siliconflow"
     PICSUM       = "picsum"
     UNSPLASH     = "unsplash"
     PEXELS       = "pexels"

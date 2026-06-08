@@ -21,8 +21,16 @@ tts:
 image:
   style: "photorealistic"
   aspect_ratio: "9:16"       # Portrait (TikTok/Shorts/Reels)
-  engine: "pollinations"     # Free AI image provider
+  engine: "cloudflare"       # Options: cloudflare, siliconflow, huggingface, pollinations (local only)
   use_picsum: false          # Fetch seeded stock photos from picsum.photos as fallback
+
+## Cloudflare Workers AI
+# Credentials are read from env vars: CLOUDFLARE_ACCOUNT_ID and CLOUDFLARE_API_TOKEN
+# Model: @cf/black-forest-labs/flux-1-schnell (FLUX, fast, high quality)
+cloudflare:
+  model: "@cf/black-forest-labs/flux-1-schnell"
+  timeout: 90
+  max_retries: 2
 
 ## Pollinations Direct API
 pollinations:

@@ -1,9 +1,16 @@
 """
-TTS Adapter — Text-to-Speech bridge to Lingo_PERSONAS.
+TTS Adapter — Text-to-Speech bridge, fully independent of Lingo_PERSONAS.
 
 Supports:
-  - edge_tts (free, no API key) via Lingo_PERSONAS backend
-  - ffmpeg silent-audio fallback for testing / offline use
+  - ``edge_tts`` (free, no API key) — default; Microsoft Neural voices via
+    the open-source ``edge-tts`` package, no Lingo dependency
+  - ``openai`` — OpenAI TTS API (requires ``openai`` package and
+    ``OPENAI_API_KEY`` environment variable)
+  - ffmpeg silent-audio fallback — used automatically when all TTS methods
+    fail, or when ``edge-tts`` / ``openai`` are not installed
+
+Multi-language support via ``LANGUAGE_VOICES`` mapping. MD5-based audio
+caching in ``.cache/tts/`` prevents redundant re-generation of identical text.
 """
 
 import asyncio

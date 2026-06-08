@@ -13,6 +13,8 @@ from .base import ImageProvider, ProviderResult, ProviderStatus
 from .pollinations_provider import PollinationsProvider
 from .huggingface_provider import HuggingFaceFluxProvider, HuggingFaceSDProvider
 from .picsum_provider import PicsumProvider
+from .siliconflow_provider import SiliconFlowProvider
+from .cloudflare_provider import CloudflareProvider
 
 
 class ProviderManager:
@@ -43,6 +45,22 @@ class ProviderManager:
         """Add Pollinations.ai provider (free, no API key)."""
         self.providers.append(PollinationsProvider(config))
         print(f"✅ Added Pollinations provider")
+    
+    def add_cloudflare(self, account_id: str = None, api_token: str = None, config: Dict[str, Any] = None):
+        """Add Cloudflare Workers AI provider (requires Account ID and API token)."""
+        if account_id and api_token:
+            self.providers.append(CloudflareProvider(account_id, api_token, config))
+            print(f"✅ Added Cloudflare Workers AI provider")
+        else:
+            print("⚠️  Skipped Cloudflare (missing account_id or api_token)")
+    
+    def add_siliconflow(self, api_key: str = None, config: Dict[str, Any] = None):
+        """Add SiliconFlow provider (requires API key)."""
+        if api_key:
+            self.providers.append(SiliconFlowProvider(api_key, config))
+            print(f"✅ Added SiliconFlow provider")
+        else:
+            print("⚠️  Skipped SiliconFlow (no API key)")
     
     def add_huggingface_flux(self, api_key: str = None, config: Dict[str, Any] = None):
         """Add HuggingFace FLUX provider (requires API key)."""
@@ -214,13 +232,19 @@ class ProviderManager:
 
 
 # Convenience function for quick usage
-def create_default_manager(huggingface_key: str = None, 
+def create_default_manager(huggingface_key: str = None,
+                          siliconflow_key: str = None,
+                          cloudflare_account_id: str = None,
+                          cloudflare_token: str = None,
                           output_dir: str = "output/shorts/footage/generated") -> ProviderManager:
     """
     Create a provider manager with sensible defaults.
     
     Args:
+        cloudflare_account_id: Optional Cloudflare Account ID
+        cloudflare_token: Optional Cloudflare API Token
         huggingface_key: Optional HuggingFace API key for additional providers
+        siliconflow_key: Optional SiliconFlow API key
         output_dir: Output directory for generated images
         
     Returns:
@@ -228,6 +252,18 @@ def create_default_manager(huggingface_key: str = None,
     """
     manager = ProviderManager(output_dir)
     
+    # Add Cloudflare if credentials available (top priority — works on all IPs)
+    if cloudflare_account_id and cloudflare_token:
+        manager.add_cloudflare(
+            cloudflare_account_id,
+            cloudflare_token,
+            config={'timeout': 90, 'max_retries': 2}
+        )
+    
+    # Add SiliconFlow if key available
+    if siliconflow_key:
+        manager.add_siliconflow(siliconflow_key, config={'timeout': 60, 'max_retries': 2})
+        
     # Always add Pollinations (free, no key needed)
     manager.add_pollinations(config={'timeout': 60, 'max_retries': 2})
     

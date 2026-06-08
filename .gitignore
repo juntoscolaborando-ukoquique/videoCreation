@@ -22,3 +22,6 @@ temp_uploads/
 
 # Cache
 .cache/
+
+# Environment variables (secrets — never commit)
+.env

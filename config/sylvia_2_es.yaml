@@ -1,0 +1,57 @@
+# Video: Sylvia — "El arte de explicar simple"
+# Público objetivo: docentes jubiladas / semi-retiradas hispanohablantes (Rioplatense)
+#
+# Ejecutar con:
+#   python -m src.main --config config/sylvia_2_es.yaml
+
+title: "Sylvia — Tu conocimiento trabajando para vos"
+language: es
+orientation: vertical
+subtitles_enabled: true
+output_format: "mp4"
+
+# Nota: para agregar música de fondo, descomentá la línea siguiente
+# y proporcioná un archivo de audio .mp3 o .wav (guitarra/piano suave):
+# background_music: "assets/music/guitarra_suave.mp3"
+
+# Ritmo pausado, natural para docente
+tts_rate: "-10%"
+image_engine: "siliconflow"
+
+speech_content: |
+  Sylvia, ¿viste qué maravilloso lo que hacen Damis y Adrián en sus videos?
+  Explican la matemática sin vueltas, directo al grano, usando un lenguaje de todos los días.
+  Esa es la verdadera pedagogía. Y mirándolos, uno puede pensar: si ellos ya lo hacen tan bien
+  y tienen miles de vistas, ¿qué espacio queda para mí? Dejame decirte algo... queda TODO el espacio del mundo.
+  Porque ellos encontraron su camino, pero tu camino y tu público están esperando por vos.
+
+  Hay una diferencia gigante entre lo que pasa en YouTube y lo que vamos a hacer juntos.
+  A YouTube entran los chicos, apurados, la noche antes del examen para ver un video de cinco minutos
+  y zafar de la materia. Pero en plataformas como Hotmart, nuestro cliente es otro: son los papás y las mamás.
+  Es esa madre que llega cansada de trabajar y se encuentra con que su hijo no entiende la tarea.
+  No se acuerda de cómo explicarle, se frustran, terminan discutiendo y la noche se vuelve un caos.
+  Ese papá y esa mamá no quieren un video suelto en internet; quieren un método, un orden,
+  una guía paso a paso que les devuelva la paz en el hogar.
+
+  Además, las matemáticas o la historia pueden ser universales, pero los programas de estudio no lo son.
+  Vos conocés al derecho y al revés el ritmo de las escuelas y los liceos de acá, de nuestra región.
+  Sabés exactamente dónde se traban los alumnos de acá, qué libros les piden y qué terminología
+  usan los profesores en el aula. Cuando una familia escuche tu voz, con tu acento, tu pausa y tu cercanía,
+  va a sentir una confianza inmediata. Van a saber que no es un video genérico de internet,
+  sino una maestra con años de experiencia que entiende perfectamente el sistema donde estudian sus hijos.
+
+  La ventaja de la tecnología que armamos es que no vas a tener que exponerte a una cámara
+  ni volverte loca editando. Tu único y más valioso trabajo va a ser volcar tu sabiduría en el papel,
+  estructurar esas clases que te salen tan bien. La aplicación se va a encargar de transformarlo
+  en videos dinámicos y atractivos. Imaginate esto: vos descansando en tu casa, disfrutando de tu tiempo,
+  mientras tu clon digital ayuda a cientos de chicos a salvar el año y genera ingresos para vos
+  las veinticuatro horas del día. Tu experiencia vale muchísimo, Sylvia.
+  Llegó el momento de que trabaje para vos. ¿Empezamos con el primer módulo?
+
+visual_assets:
+  asset_type: "text_prompts"
+  prompts:
+    - "Warm classroom at golden hour, open notebooks, colored pencils, handwritten math on chalkboard, cozy and inviting atmosphere, photorealistic"
+    - "Tired parent sitting at kitchen table at night helping child with homework, warm lamp light, books and papers spread out, realistic photography style"
+    - "Mate and thermos on a wooden study desk beside open school textbooks, warm natural light, Uruguayan home atmosphere, photorealistic"
+    - "Mature woman smiling peacefully at home, drinking tea near a bright window, tablet showing an educational video in background, warm and relaxed mood, photorealistic"

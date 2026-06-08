@@ -2,17 +2,27 @@
 Image Adapter — AI image generation & modification bridge.
 
 Provider priority:
-  1. Picsum (seed-based)  — free, no auth, deterministic per prompt keyword seed
-  2. Lingo_PERSONAS FootageGeneratorV2  — used only if Picsum fails entirely
-  3. Pillow placeholder fallback  — offline / testing
+  1. FootageGeneratorV2 (Lingo_PERSONAS, default) — Cloudflare Workers AI →
+     SiliconFlow → HuggingFace → Pollinations (blocked on VPS, skipped)
+  2. Picsum (seed-based) — only when ``image_engine: picsum`` is explicitly set;
+     free, no auth, deterministic per prompt keyword seed
+  3. Pillow placeholder fallback — offline / testing, when all others fail
 """
 
 import os
 import re
+import shutil
 import time
 import logging
+from pathlib import Path
 from typing import List, Optional
 from urllib.parse import quote
+
+try:
+    from dotenv import load_dotenv
+    load_dotenv(Path(__file__).resolve().parent.parent / ".env", override=False)
+except ImportError:
+    pass  # python-dotenv not installed — credentials must come from the environment directly
 
 from src.lingo_utils import ensure_lingo_on_path
 from src import config_loader
@@ -55,21 +65,27 @@ def generate_from_prompts(
 
     os.makedirs(output_dir, exist_ok=True)
 
-    # 1. Picsum seeded by prompt keywords
-    if engine == "picsum" or (engine is None and cfg.get("use_picsum", True)):
+    # 1. Picsum — only when explicitly requested via image_engine: picsum
+    if engine == "picsum":
         stock_dir = os.path.join(output_dir, "stock")
         os.makedirs(stock_dir, exist_ok=True)
         paths = _picsum_batch(prompts, stock_dir, width, height)
         if paths:
             return paths
         logger.warning("Picsum failed or returned partial results — trying next provider.")
-    else:
-        logger.info("Picsum skipped due to engine='%s' or config.", engine)
 
-    # 2. FootageGeneratorV2 (Lingo)
+    # 2. FootageGeneratorV2 (Lingo) — default for all other engines
+    #    The engine hint is forwarded so FootageGeneratorV2 can prioritise
+    #    a specific provider if it supports it (e.g. "siliconflow").
+    #    Unknown engine values are logged and ignored gracefully.
+    if engine is not None and engine != "picsum":
+        logger.info("Requested image engine: '%s' — forwarding to FootageGeneratorV2.", engine)
     gen_dir = os.path.join(output_dir, "generated")
     os.makedirs(gen_dir, exist_ok=True)
-    lingo_paths = _try_footage_generator(prompts, gen_dir, style, aspect_ratio)
+    lingo_paths = _try_footage_generator(
+        prompts, gen_dir, style, aspect_ratio,
+        preferred_engine=engine if engine != "picsum" else None,
+    )
     if lingo_paths:
         return lingo_paths
 
@@ -80,7 +96,6 @@ def generate_from_prompts(
 
 def copy_provided_images(image_paths: List[str], output_dir: str) -> List[str]:
     """Validate and copy user-provided images into the workspace."""
-    import shutil
     cached_dir = os.path.join(output_dir, "cached")
     os.makedirs(cached_dir, exist_ok=True)
     copied: List[str] = []
@@ -136,6 +151,7 @@ def _picsum_batch(
     """Fetch one Picsum image per prompt using a keyword-derived seed.
 
     URL format: https://picsum.photos/seed/{seed}/{width}/{height}.jpg
+    Picsum returns a 302 redirect — must follow with allow_redirects=True.
     Same seed → same image every run. Different prompts → different seeds → different images.
     """
     import requests
@@ -149,7 +165,7 @@ def _picsum_batch(
         logger.info("[%d/%d] Picsum seed='%s' — %s", idx + 1, len(prompts), seed, prompt[:60])
 
         try:
-            response = requests.get(url, timeout=timeout)
+            response = requests.get(url, timeout=timeout, allow_redirects=True)
             if response.status_code == 200:
                 filename  = f"picsum_{idx:03d}_{seed}.jpg"
                 file_path = os.path.join(output_dir, filename)
@@ -186,10 +202,17 @@ def _try_footage_generator(
     output_dir: str,
     style: str,
     aspect_ratio: str,
+    preferred_engine: Optional[str] = None,
 ) -> Optional[List[str]]:
     """Attempt to use FootageGeneratorV2 from Lingo_PERSONAS.
 
     Returns None if Lingo is not installed. Re-raises runtime errors.
+    Credentials for Cloudflare, SiliconFlow, and HuggingFace are read
+    from environment variables automatically by FootageGeneratorV2.
+
+    preferred_engine: optional hint forwarded to FootageGeneratorV2 if it
+        supports provider selection (e.g. ``"siliconflow"``). Ignored if
+        FootageGeneratorV2 does not accept the parameter.
     """
     try:
         ensure_lingo_on_path()
@@ -199,8 +222,29 @@ def _try_footage_generator(
         return None
 
     try:
-        gen   = FootageGeneratorV2(output_dir=output_dir)
-        paths = gen.generate_images_batch(prompts, style=style, aspect_ratio=aspect_ratio, delay=3.0)
+        gen = FootageGeneratorV2(
+            output_dir=output_dir,
+            cloudflare_account_id=os.environ.get('CLOUDFLARE_ACCOUNT_ID') or None,
+            cloudflare_token=os.environ.get('CLOUDFLARE_API_TOKEN') or None,
+            siliconflow_key=os.environ.get('SILICONFLOW_API_KEY') or None,
+            huggingface_key=os.environ.get('HUGGINGFACE_API_KEY') or None,
+        )
+        # Explanation: `or None` converts both a missing key (returns None from get)
+        # and an explicitly empty string (e.g. KEY="" in .env) to None, so
+        # FootageGeneratorV2 correctly skips that provider instead of attempting
+        # authentication with an empty credential string.
+        batch_kwargs = dict(style=style, aspect_ratio=aspect_ratio, delay=3.0)
+        if preferred_engine is not None:
+            try:
+                paths = gen.generate_images_batch(
+                    prompts, provider=preferred_engine, **batch_kwargs
+                )
+            except TypeError:
+                # FootageGeneratorV2 doesn't accept provider= — fall back to default call
+                logger.debug("FootageGeneratorV2 does not support provider= kwarg — ignoring engine hint.")
+                paths = gen.generate_images_batch(prompts, **batch_kwargs)
+        else:
+            paths = gen.generate_images_batch(prompts, **batch_kwargs)
         return paths if paths else None
     except Exception as exc:
         logger.error("FootageGeneratorV2 raised an unexpected error: %s", exc)

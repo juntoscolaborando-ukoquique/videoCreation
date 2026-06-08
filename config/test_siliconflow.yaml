@@ -1,0 +1,16 @@
+# Smoke test — SiliconFlow image generation
+# Run with: python -m src.main --config config/test_siliconflow.yaml
+# Requires: SILICONFLOW_API_KEY in .env
+
+title: "Test SiliconFlow AI"
+language: es
+orientation: vertical
+subtitles_enabled: false
+output_format: "mp4"
+image_engine: "siliconflow"
+speech_content: "Prueba rápida para verificar que SiliconFlow genera imágenes correctamente."
+visual_assets:
+  asset_type: "text_prompts"
+  prompts:
+    - "Warm classroom with colorful notebooks and a chalkboard, photorealistic"
+    - "Tired parent helping child with homework at night, warm lamp light, photorealistic"

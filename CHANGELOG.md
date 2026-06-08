@@ -2,6 +2,22 @@
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-06-08
+
+### Added
+- `config/sylvia_2_es.yaml` — new video prompt for Sylvia, a retired teacher, using rioplatense Spanish, Cloudflare AI images, `-10%` TTS rate, and vertical orientation.
+- `config/test_cloudflare.yaml` — minimal smoke-test config to verify Cloudflare AI image generation end-to-end.
+- `TROUBLESHOOTING.md` — two new entries: "Picsum images don't match prompts" and "Pollinations returns HTTP 402 on VPS/cloud servers" with root cause analysis and fix options.
+
+### Fixed
+- `src/image_adapter.py` — Picsum requests now use `allow_redirects=True`; previously the 302 redirect was not followed, silently returning empty responses.
+- `src/image_adapter.py` — Picsum is no longer the default provider. It is now only used when `image_engine: picsum` is explicitly set. All other cases go directly to `FootageGeneratorV2` (Cloudflare → SiliconFlow → HuggingFace → Picsum fallback), ensuring AI-generated images that match the prompt.
+- `src/image_adapter.py` — `_try_footage_generator()` now explicitly passes `cloudflare_account_id`, `cloudflare_token`, and `siliconflow_key` from environment variables to `FootageGeneratorV2`, enabling the full provider failover chain.
+
+### Changed
+- `src/image_adapter.py` — `dotenv` loaded at module import so `.env` credentials are available without manual setup.
+- Default image provider priority is now: Cloudflare Workers AI → SiliconFlow → Pollinations (blocked on VPS, skipped) → HuggingFace → Picsum.
+
 ## [0.2.0] - 2026-06-07
 
 ### Added

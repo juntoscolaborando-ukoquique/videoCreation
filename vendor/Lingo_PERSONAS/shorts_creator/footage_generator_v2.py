@@ -37,7 +37,10 @@ class FootageGeneratorV2(FootageGeneratorBase):
     def __init__(self, output_dir: str = 'output/shorts/footage',
                  pexels_key: str = None, 
                  pixabay_key: str = None,
-                 huggingface_key: str = None):
+                 huggingface_key: str = None,
+                 siliconflow_key: str = None,
+                 cloudflare_account_id: str = None,
+                 cloudflare_token: str = None):
         """
         Initialize the footage generator with provider failover support.
         
@@ -46,6 +49,9 @@ class FootageGeneratorV2(FootageGeneratorBase):
             pexels_key: Optional Pexels API key
             pixabay_key: Optional Pixabay API key  
             huggingface_key: Optional HuggingFace API key (adds more providers)
+            siliconflow_key: Optional SiliconFlow API key
+            cloudflare_account_id: Optional Cloudflare Account ID
+            cloudflare_token: Optional Cloudflare API token
         """
         # Initialize base class for stock image functionality
         super().__init__(
@@ -55,13 +61,19 @@ class FootageGeneratorV2(FootageGeneratorBase):
             huggingface_key=huggingface_key
         )
         
-        # Store the HF key for provider manager
+        # Store the keys for provider manager
         self.huggingface_key = huggingface_key or os.environ.get('HUGGINGFACE_API_KEY', '')
+        self.siliconflow_key = siliconflow_key or os.environ.get('SILICONFLOW_API_KEY', '')
+        self.cloudflare_account_id = cloudflare_account_id or os.environ.get('CLOUDFLARE_ACCOUNT_ID', '')
+        self.cloudflare_token = cloudflare_token or os.environ.get('CLOUDFLARE_API_TOKEN', '')
         
         # Create the provider manager with automatic failover for AI generation
         generated_dir = self.output_dir / 'generated'
         self.provider_manager = create_default_manager(
             huggingface_key=self.huggingface_key,
+            siliconflow_key=self.siliconflow_key,
+            cloudflare_account_id=self.cloudflare_account_id,
+            cloudflare_token=self.cloudflare_token,
             output_dir=str(generated_dir)
         )
         
@@ -156,7 +168,8 @@ FootageGenerator = FootageGeneratorV2
 
 # Convenience function
 def generate_image_with_failover(prompt: str, style: str = 'photorealistic',
-                                  huggingface_key: str = None) -> str:
+                                  huggingface_key: str = None,
+                                  siliconflow_key: str = None) -> str:
     """
     Quick function to generate an image with automatic failover.
     
@@ -164,11 +177,12 @@ def generate_image_with_failover(prompt: str, style: str = 'photorealistic',
         prompt: Image description
         style: Style preset
         huggingface_key: Optional HF key for additional providers
+        siliconflow_key: Optional SiliconFlow key
         
     Returns:
         Path to generated image
     """
-    gen = FootageGeneratorV2(huggingface_key=huggingface_key)
+    gen = FootageGeneratorV2(huggingface_key=huggingface_key, siliconflow_key=siliconflow_key)
     return gen.generate_image(prompt, style)
 
 

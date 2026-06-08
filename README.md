@@ -136,12 +136,23 @@ print(f"Video saved: {result['output_path']}")
 | `orientation` | Orientation | `vertical` | `vertical` (9:16) or `horizontal` (16:9) |
 | `tts_backend` | TTSBackend \| None | None | Per-video TTS backend override (`edge_tts`, `azure`, `openai`, `fish_tts`) |
 | `tts_rate` | str \| None | None | Per-video speaking rate override (e.g. `"-10%"`, `"+5%"`) |
-| `image_engine` | ImageEngine \| None | None | Per-video image engine override (`pollinations`, `huggingface`) |
+| `image_engine` | ImageEngine \| None | None | Per-video image engine override (`cloudflare`, `siliconflow`, `huggingface`, `pollinations`, `picsum`) |
 | `image_style` | str \| None | None | Per-video image style override (e.g. `cinematic`, `photorealistic`) |
 
----
+### Environment Variables
 
-## Running the Test Suite
+Create a `.env` file at the project root with your API keys:
+
+```env
+CLOUDFLARE_ACCOUNT_ID=your_account_id
+CLOUDFLARE_API_TOKEN=your_api_token
+SILICONFLOW_API_KEY=your_key
+HUGGINGFACE_API_KEY=your_key
+```
+
+All keys are optional — the pipeline falls through to the next available provider automatically.
+
+---
 
 ```bash
 # Run all tests with verbose output
@@ -220,7 +231,7 @@ VideoCreation/
 Lingo_PERSONAS is an optional dependency. The project runs fully standalone without it.
 
 - **TTS**: Runs independently via `edge_tts` — no Lingo involvement
-- **Image Generation**: Uses `FootageGeneratorV2` (Lingo) when available, falls back to Picsum → Pillow placeholders
+- **Image Generation**: Uses `FootageGeneratorV2` (Lingo) when available — provider priority: Cloudflare Workers AI → SiliconFlow → Pollinations (blocked on VPS IPs) → HuggingFace → Picsum fallback → Pillow placeholders. Credentials are read from `.env` automatically.
 - **Video Assembly**: Uses `LingoAssemblerBackend` (Lingo) when available, falls back to a local moviepy implementation
 
 To enable Lingo integration, ensure the `Lingo_PERSONAS` package is on the Python path. The `lingo_utils.py` module handles path injection automatically.
