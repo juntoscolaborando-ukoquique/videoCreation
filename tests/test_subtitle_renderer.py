@@ -20,7 +20,7 @@ def _make_font(size: int = 54) -> ImageFont.FreeTypeFont:
 class TestRenderSubtitleFrame:
     def test_frame_is_correct_size(self):
         font = _make_font()
-        frame = subtitle_renderer.render_subtitle_frame(
+        frame = subtitle_renderer._render_subtitle_frame_legacy_test_only(
             text="Hello world",
             width=1080, height=1920,
             font=font,
@@ -39,7 +39,7 @@ class TestRenderSubtitleFrame:
         font = _make_font(54)
         ascent, descent = font.getmetrics()
 
-        frame = subtitle_renderer.render_subtitle_frame(
+        frame = subtitle_renderer._render_subtitle_frame_legacy_test_only(
             text="pygmy jog",
             width=1080, height=1920,
             font=font,
@@ -66,7 +66,7 @@ class TestRenderSubtitleFrame:
         """Text longer than max_chars should wrap without changing frame dimensions."""
         font = _make_font()
         long_text = "This is a very long subtitle line that should definitely be wrapped"
-        frame = subtitle_renderer.render_subtitle_frame(
+        frame = subtitle_renderer._render_subtitle_frame_legacy_test_only(
             text=long_text,
             width=1080, height=1920,
             font=font,
@@ -78,7 +78,7 @@ class TestRenderSubtitleFrame:
     def test_empty_text_returns_transparent_frame(self):
         """Empty text should produce a fully transparent frame without raising."""
         font = _make_font()
-        frame = subtitle_renderer.render_subtitle_frame(
+        frame = subtitle_renderer._render_subtitle_frame_legacy_test_only(
             text="",
             width=1080, height=1920,
             font=font,

@@ -1,9 +1,9 @@
 """
-TTS Adapter — Text-to-Speech bridge, fully independent of Lingo_PERSONAS.
+TTS Adapter — Text-to-Speech bridge.
 
 Supports:
   - ``edge_tts`` (free, no API key) — default; Microsoft Neural voices via
-    the open-source ``edge-tts`` package, no Lingo dependency
+    the open-source ``edge-tts`` package
   - ``openai`` — OpenAI TTS API (requires ``openai`` package and
     ``OPENAI_API_KEY`` environment variable)
   - ffmpeg silent-audio fallback — used automatically when all TTS methods
@@ -136,8 +136,13 @@ def generate_speech(
         res = _edge_tts(text, output_path, resolved_voice, rate)
     elif method == "openai":
         res = _openai_tts(text, output_path, resolved_voice)
+    elif method in ("azure", "fish_tts"):
+        raise NotImplementedError(
+            f"TTS backend '{method}' is declared in the schema but not yet implemented. "
+            "Use 'edge_tts' (default, free) or 'openai' (requires OPENAI_API_KEY)."
+        )
     else:
-        logger.warning("TTS method '%s' not supported — generating silent placeholder.", method)
+        logger.warning("TTS method '%s' not recognised — generating silent placeholder.", method)
         res = _generate_silent_audio(output_path)
 
     if use_cache and res and Path(res).exists():

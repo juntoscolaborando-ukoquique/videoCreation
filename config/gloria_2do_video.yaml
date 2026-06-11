@@ -1,0 +1,64 @@
+# Video: Gloria — 2do Video — "El camino claro y seguro"
+# Basado en: /root/a_VIDEO_GENERATION/VIDEO_DESDE_PERSONAS/Gloria-2doVIDEO/GLORIA-PROMPT-borrador-2.txt
+#
+# NOTAS DE ADAPTACIÓN:
+#   - Los overlays de texto en pantalla NO están soportados; los subtítulos se generan
+#     automáticamente desde el audio (los términos clave quedarán visibles en los subtítulos).
+#   - Se usan 5 imágenes que cubren los bloques temáticos del guion.
+#   - Voz masculina cálida: es-AR-TomasNeural (sobreescribe el default del config)
+#   - Orientación horizontal (16:9), sin avatar
+#
+# Ejecutar con:
+#   python -m src.main --config config/gloria_2do_video.yaml
+
+title: "Gloria — El camino claro y seguro"
+language: es
+orientation: horizontal
+subtitles_enabled: true
+output_format: "mp4"
+tts_rate: "-18%"
+tts_voice: "es-AR-TomasNeural"
+
+# background_music: "assets/music/guitarra_suave.mp3"
+
+speech_content: |
+  Hola, Gloria. Queremos contarte el camino claro y seguro que hemos trazado para cuidarte,
+  porque cada paso está pensado para tu tranquilidad.
+
+  Lo primero que debes saber es que la estrategia tiene una regla de oro:
+  no daremos ningún paso a ciegas ni habrá gastos innecesarios.
+  Todo comienza con una Fase Informacional a costo cero.
+
+  Actualmente estamos concluyendo la Fase 1, destinada a fijar tu línea de base hemodinámica.
+  Para cerrarla, solo resta procesar los últimos datos de tu monitorización domiciliaria
+  y consolidar la firma digital de tu Médico Validador con su número de colegiado de Cataluña.
+  Este respaldo local es el requisito indispensable para abrir la validación internacional.
+
+  Tu dossier médico ya cuenta con un abstract técnico en inglés, que será enviado
+  directamente a los portales de admisión de centros de referencia como la Mayo Clinic,
+  Johns Hopkins y la Charité de Berlín.
+  Esta auditoría preliminar es un protocolo estándar de la alta medicina internacional
+  y no genera ningún cargo para nosotros.
+
+  En este momento, tú no tienes que hacer nada más que descansar y dejarte cuidar.
+
+  El factor económico solo entra en juego cuando recibamos una respuesta médica afirmativa
+  y real: que el caso de Gloria califica y abren su expediente.
+  Será en ese momento, y no antes, cuando se coordinará y abonará una teleconsulta
+  con un especialista, con fecha acordada.
+  No pagamos por una expectativa; pagamos por un acto médico concreto y pre-aprobado.
+
+  Como verás, la estrategia conjuga el máximo rigor científico con una protección blindada
+  de tu entorno. Todo el proceso está bajo control metodológico.
+  Estamos procesando la complejidad para que tú solo te ocupes de recuperar tu equilibrio.
+  Todo está bajo control, paso a paso, diseñado para proteger tu salud
+  y darte el bienestar que te mereces.
+
+visual_assets:
+  asset_type: "text_prompts"
+  prompts:
+    - "A softly lit wooden desk with a neatly organized open medical folder, a steaming cup of tea beside it, and a blurred peaceful garden visible through a sunlit window. No people. Cinematic warm tones, photorealistic, horizontal 16:9 wide composition"
+    - "A close-up of a tablet screen on a wooden table displaying a calm health monitoring dashboard: a gentle heartbeat line and a three-day sleep quality graph in soft blue and green tones. A small potted plant in the background. Photorealistic, warm natural light, horizontal 16:9"
+    - "A professional male doctor in a modern clinic office, seated at a clean desk, carefully reviewing and signing a medical document. A laptop open beside him with a hospital crest on the screen. Warm clinical lighting, trustworthy and calm atmosphere, photorealistic, horizontal 16:9"
+    - "A wide cinematic view of a glowing world map at night, with soft golden dotted lines connecting Western Europe to medical centers in the United States and Germany, each marked with a subtle glow. Deep blue background, elegant and professional, photorealistic digital art, horizontal 16:9"
+    - "An elderly woman resting peacefully in a cozy armchair in a warm, sunlit living room, surrounded by indoor plants and soft natural light. A laptop on a nearby table shows a completed progress bar. No text visible. Calm, protected, hopeful atmosphere, photorealistic, horizontal 16:9"

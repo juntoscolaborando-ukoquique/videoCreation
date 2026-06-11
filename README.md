@@ -2,8 +2,6 @@
 
 A configurable video generation pipeline that accepts user-defined content — speech text, visual assets, and styling options — and produces a complete video file.
 
-Lingo_PERSONAS is an optional integration used for AI image generation and video assembly. TTS runs independently via edge_tts with no Lingo dependency.
-
 ---
 
 ## Architecture
@@ -17,15 +15,11 @@ Lingo_PERSONAS is an optional integration used for AI image generation and video
 │  TTS     │  Image   │  Subtitle     │  Assembler            │
 │  Adapter │  Adapter │  Adapter      │  Adapter              │
 │          │          │               │                       │
-│ edge_tts │ Picsum · │ Word-rate     │ LingoAssembler        │
-│ (free,   │ FootageG │ estimation    │ backend               │
-│  no      │ enV2 ·   │               │ (moviepy              │
-│  Lingo)  │ Pillow   │               │  fallback)            │
+│ edge_tts │ Cloudflare │ Word-rate     │ moviepy               │
+│ openai   │ SiliconFlow│ estimation    │ (injectable           │
+│          │ Picsum     │               │  backend)             │
+│          │ Pillow     │               │                       │
 └──────────┴──────────┴───────────────┴───────────────────────┘
-                            │
-                  (optional)▼
-              Lingo_PERSONAS Engine
-          (Image providers · moviepy)
 ```
 
 ### Module Overview
@@ -35,13 +29,11 @@ Lingo_PERSONAS is an optional integration used for AI image generation and video
 | `src/schema.py` | Pydantic models for `VideoConfiguration`, `TTSBackend`, `ImageEngine` |
 | `src/orchestrator.py` | Main pipeline: wires all adapters together |
 | `src/tts_adapter.py` | Text-to-speech (edge_tts + silent fallback) |
-| `src/image_adapter.py` | AI image generation (FootageGeneratorV2 + Pillow fallback) |
+| `src/image_adapter.py` | AI image generation (Cloudflare/SiliconFlow + Picsum/Pillow fallback) |
 | `src/subtitle_adapter.py` | Subtitle segment generation (word-rate model) |
 | `src/subtitle_renderer.py` | ffmpeg ASS-based subtitle burn-in (precise positioning, descender fix) |
-| `src/assembler_adapter.py` | Final video assembly (LingoAssemblerBackend + moviepy fallback) |
-| `src/backends/__init__.py` | `AssemblerBackend` protocol definition |
-| `src/backends/lingo_assembler_backend.py` | Lingo_PERSONAS VideoAssembler encapsulated behind the backend interface |
-| `src/lingo_utils.py` | Shared Lingo_PERSONAS path injection utility |
+| `src/assembler_adapter.py` | Final video assembly via moviepy (injectable `AssemblerBackend` for testing) |
+| `src/backends/__init__.py` | `AssemblerBackend` and `SubtitleBackend` protocol definitions |
 | `src/config_loader.py` | Reads and caches `config/default_config.yaml` |
 | `src/ui.py` | Streamlit UI for interactive video generation |
 | `src/main.py` | CLI entry point supporting YAML/JSON execution |
@@ -183,7 +175,7 @@ All tests mock external dependencies (TTS, AI image generation, video assembly) 
 6. **Image modification** — verifies `modify_images` is called with the correct instruction string, and is not called when no instructions are set
 7. **No visuals error** — validates proper error handling
 8. **Subtitle renderer** — frame size, descender pixel check, text wrapping, empty text
-9. **Assembler backend** — burn-in called/skipped, Lingo fallback, moviepy import error
+9. **Assembler backend** — burn-in called/skipped, backend injection, moviepy import error
 
 ---
 
@@ -203,9 +195,7 @@ VideoCreation/
 │   ├── subtitle_renderer.py
 │   ├── assembler_adapter.py
 │   ├── backends/
-│   │   ├── __init__.py               # AssemblerBackend protocol
-│   │   └── lingo_assembler_backend.py
-│   ├── lingo_utils.py
+│   │   ├── __init__.py               # AssemblerBackend + SubtitleBackend protocols
 │   └── config_loader.py
 ├── tests/
 │   ├── __init__.py
@@ -225,13 +215,3 @@ VideoCreation/
 ```
 
 ---
-
-## Lingo_PERSONAS Integration (Optional)
-
-Lingo_PERSONAS is an optional dependency. The project runs fully standalone without it.
-
-- **TTS**: Runs independently via `edge_tts` — no Lingo involvement
-- **Image Generation**: Uses `FootageGeneratorV2` (Lingo) when available — provider priority: Cloudflare Workers AI → SiliconFlow → Pollinations (blocked on VPS IPs) → HuggingFace → Picsum fallback → Pillow placeholders. Credentials are read from `.env` automatically.
-- **Video Assembly**: Uses `LingoAssemblerBackend` (Lingo) when available, falls back to a local moviepy implementation
-
-To enable Lingo integration, ensure the `Lingo_PERSONAS` package is on the Python path. The `lingo_utils.py` module handles path injection automatically.

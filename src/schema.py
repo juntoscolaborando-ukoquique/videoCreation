@@ -1,4 +1,6 @@
-from pydantic import BaseModel, Field
+import warnings
+
+from pydantic import BaseModel, Field, model_validator
 from typing import Dict, List, Optional
 from enum import Enum
 
@@ -42,8 +44,6 @@ class ImageEngine(str, Enum):
     CLOUDFLARE   = "cloudflare"
     SILICONFLOW  = "siliconflow"
     PICSUM       = "picsum"
-    UNSPLASH     = "unsplash"
-    PEXELS       = "pexels"
 
 
 class VisualAssetConfig(BaseModel):
@@ -105,3 +105,15 @@ class VideoConfiguration(BaseModel):
         default=None,
         description="Speaking rate for this video, e.g. '-10%' (overrides config default)",
     )
+
+    @model_validator(mode="after")
+    def warn_unimplemented_image_modification(self) -> "VideoConfiguration":
+        if self.image_modification_instructions is not None:
+            warnings.warn(
+                "image_modification_instructions is set but modify_images() is not yet "
+                "implemented. The pipeline will raise NotImplementedError at step 4. "
+                "Remove image_modification_instructions from your config to proceed.",
+                UserWarning,
+                stacklevel=2,
+            )
+        return self

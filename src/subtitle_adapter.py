@@ -73,6 +73,12 @@ def generate_subtitle_segments(
         scale = total_duration / total_raw
         durations = [d * scale for d in raw_durations]
     else:
+        if total_duration is None:
+            logger.warning(
+                "total_duration is None — subtitle segments will use unscaled word-rate "
+                "estimation (%.1f wps) and may drift from actual audio.",
+                words_per_second,
+            )
         durations = raw_durations
 
     # Build segments

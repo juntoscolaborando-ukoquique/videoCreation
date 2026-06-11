@@ -24,20 +24,17 @@ import logging
 import os
 import shutil
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 
 from src.schema import VideoConfiguration, VisualAssetType, Orientation
-from src import tts_adapter, image_adapter, subtitle_adapter, assembler_adapter, config_loader
-from src.backends import SubtitleBackend
+from src import tts_adapter, image_adapter, subtitle_adapter, assembler_adapter
+from src import config_loader as _default_config_loader
+from src.config_loader import ConfigLoader
+from src.backends import AssemblerBackend, SubtitleBackend
 from src.backends.ffmpeg_subtitle_backend import FFmpegSubtitleBackend
 from src.utils import sanitize_filename
 
 logger = logging.getLogger(__name__)
-
-
-def _sanitize_title(title: str) -> str:
-    """Alias for :func:`src.utils.sanitize_filename` — kept for internal use."""
-    return sanitize_filename(title)
 
 
 class VideoOrchestrator:
@@ -47,7 +44,13 @@ class VideoOrchestrator:
     backends can be swapped independently.
     """
 
-    def __init__(self, output_dir: str = "output", subtitle_backend: SubtitleBackend = None):
+    def __init__(
+        self,
+        output_dir: str = "output",
+        subtitle_backend: SubtitleBackend = None,
+        assembler_backend: AssemblerBackend = None,
+        config_loader: ConfigLoader = None,
+    ):
         """
         Parameters
         ----------
@@ -59,12 +62,27 @@ class VideoOrchestrator:
             Backend used for subtitle burn-in. Defaults to
             ``FFmpegSubtitleBackend``. Pass an alternative to swap renderers
             or inject a mock in tests.
+        assembler_backend:
+            Backend used for video assembly. Defaults to ``None``, which
+            causes ``assemble_video`` to use the local moviepy implementation.
+            Pass an alternative to swap assemblers or inject a mock in tests.
+        config_loader:
+            ``ConfigLoader`` instance to use for this orchestrator. Defaults
+            to the module-level singleton. Only affects orchestrator-level
+            config reads (e.g. output dimensions). Note: adapters
+            (tts_adapter, image_adapter, etc.) read config from the
+            module-level singleton directly and are not affected by this
+            parameter. In practice this is fine — there is only ever one
+            config file per process. For parallel batch scenarios, use
+            separate processes rather than threads.
         """
         self.output_dir = Path(output_dir)
         self.output_dir.mkdir(parents=True, exist_ok=True)
         self._subtitle_backend: SubtitleBackend = (
             subtitle_backend if subtitle_backend is not None else FFmpegSubtitleBackend()
         )
+        self._assembler_backend: Optional[AssemblerBackend] = assembler_backend
+        self._config = config_loader if config_loader is not None else _default_config_loader
 
     # ------------------------------------------------------------------
     # Public
@@ -82,7 +100,7 @@ class VideoOrchestrator:
         logger.info("=== Starting video generation: %s ===", config.title)
 
         # 1. Prepare workspace
-        workspace = self.output_dir / _sanitize_title(config.title)
+        workspace = self.output_dir / sanitize_filename(config.title)
         workspace.mkdir(parents=True, exist_ok=True)
 
         # 2. Generate audio from speech text
@@ -97,7 +115,7 @@ class VideoOrchestrator:
         )
 
         # Determine orientation dimensions
-        cfg = config_loader.video()
+        cfg = self._config.video()
         base_w = cfg.get("width", 1080)
         base_h = cfg.get("height", 1920)
         v_width, v_height = min(base_w, base_h), max(base_w, base_h)
@@ -162,6 +180,7 @@ class VideoOrchestrator:
             background_music=config.background_music,
             width=final_width,
             height=final_height,
+            backend=self._assembler_backend,
         )
 
         if not output_path or not os.path.exists(output_path):
@@ -189,7 +208,6 @@ class VideoOrchestrator:
         final_filename = Path(output_path).name
         final_path = self.output_dir / final_filename
         if Path(output_path).resolve() != final_path.resolve():
-            import shutil
             shutil.move(output_path, final_path)
             logger.info("Video promoted → %s", final_path)
             output_path = str(final_path)

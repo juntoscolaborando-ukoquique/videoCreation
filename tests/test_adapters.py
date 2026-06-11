@@ -62,10 +62,18 @@ class TestTTSAdapter:
             assert os.path.isfile(out2)
 
     def test_unknown_method_uses_fallback(self, tmp_path):
-        """An unknown TTS method should still produce a file (silent fallback)."""
+        """An unknown TTS method string should still produce a file (silent fallback)."""
         out = str(tmp_path / "unknown.mp3")
         result = tts_adapter.generate_speech("Hello", out, method="unknown_method")
         assert result == out
+
+    def test_unimplemented_backend_raises(self, tmp_path):
+        """Declared-but-unimplemented backends (azure, fish_tts) must raise NotImplementedError."""
+        for backend in ("azure", "fish_tts"):
+            out = str(tmp_path / f"{backend}.mp3")
+            with pytest.raises(NotImplementedError, match="not yet implemented"):
+                tts_adapter.generate_speech("Hello", out, method=backend)
+
 
     def test_language_resolves_to_correct_voice(self, tmp_path):
         """Language code should map to the correct edge_tts voice."""
@@ -108,11 +116,11 @@ class TestTTSAdapter:
 
 class TestImageAdapter:
     def test_generate_placeholder_images(self, tmp_path):
-        """Placeholder images should be created when Picsum and FootageGeneratorV2 are unavailable."""
+        """Placeholder images should be created when Picsum and native AI are unavailable."""
         out_dir = str(tmp_path / "imgs")
         prompts = ["A cat", "A dog", "A bird"]
         with patch.object(image_adapter, "_picsum_batch", return_value=[]), \
-             patch.object(image_adapter, "_try_footage_generator", return_value=None):
+             patch.object(image_adapter, "_native_ai_generation", return_value=None):
             paths = image_adapter.generate_from_prompts(prompts, out_dir)
         assert len(paths) == 3
         for p in paths:
@@ -139,28 +147,46 @@ class TestImageAdapter:
         with pytest.raises(NotImplementedError, match="not yet implemented"):
             image_adapter.modify_images(sample_images, "brighten everything")
 
-    def test_engine_pollinations_skips_picsum(self, tmp_path):
-        """Passing engine='pollinations' should skip Picsum even if config has use_picsum=True."""
+    def test_unimplemented_image_engine_raises(self, tmp_path):
+        """Engines declared in schema but not wired (huggingface, pollinations) must raise."""
+        out_dir = str(tmp_path / "imgs")
+        for engine in ("huggingface", "pollinations"):
+            with pytest.raises(NotImplementedError, match="not yet implemented"):
+                image_adapter.generate_from_prompts(["A cat"], out_dir, engine=engine)
+
+    def test_engine_non_picsum_skips_picsum_batch(self, tmp_path):
+        """Passing engine!='picsum' should skip _picsum_batch and go to native AI."""
         out_dir = str(tmp_path / "imgs")
         with patch.object(image_adapter, "_picsum_batch", return_value=["fake.jpg"]) as mock_picsum, \
-             patch.object(image_adapter, "_try_footage_generator", return_value=["lingo.png"]) as mock_lingo:
-            paths = image_adapter.generate_from_prompts(["test"], out_dir, engine="pollinations")
-            
+             patch.object(image_adapter, "_native_ai_generation", return_value=["gen.png"]) as mock_ai:
+            paths = image_adapter.generate_from_prompts(["test"], out_dir, engine="cloudflare")
+
         mock_picsum.assert_not_called()
-        mock_lingo.assert_called_once()
-        assert paths == ["lingo.png"]
+        mock_ai.assert_called_once()
+        assert paths == ["gen.png"]
 
     def test_engine_picsum_forces_picsum(self, tmp_path):
-        """Passing engine='picsum' should use Picsum even if config has use_picsum=False."""
+        """Passing engine='picsum' should use Picsum and skip native AI."""
         out_dir = str(tmp_path / "imgs")
-        with patch("src.image_adapter.config_loader.image", return_value={"use_picsum": False}), \
-             patch.object(image_adapter, "_picsum_batch", return_value=["fake.jpg"]) as mock_picsum, \
-             patch.object(image_adapter, "_try_footage_generator") as mock_lingo:
+        with patch.object(image_adapter, "_picsum_batch", return_value=["fake.jpg"]) as mock_picsum, \
+             patch.object(image_adapter, "_native_ai_generation") as mock_ai:
             paths = image_adapter.generate_from_prompts(["test"], out_dir, engine="picsum")
-            
+
         mock_picsum.assert_called_once()
-        mock_lingo.assert_not_called()
+        mock_ai.assert_not_called()
         assert paths == ["fake.jpg"]
+
+    def test_use_picsum_config_flag_activates_picsum(self, tmp_path):
+        """use_picsum:true in config should auto-route to Picsum when no explicit engine is passed."""
+        out_dir = str(tmp_path / "imgs")
+        with patch("src.image_adapter.config_loader.image", return_value={"use_picsum": True}), \
+             patch.object(image_adapter, "_picsum_batch", return_value=["stock.jpg"]) as mock_picsum, \
+             patch.object(image_adapter, "_native_ai_generation") as mock_ai:
+            paths = image_adapter.generate_from_prompts(["test"], out_dir)
+
+        mock_picsum.assert_called_once()
+        mock_ai.assert_not_called()
+        assert paths == ["stock.jpg"]
 
 
 # =========================================================================== #
@@ -237,7 +263,7 @@ class TestAssemblerAdapter:
         """Backend.assemble must never receive segments or subtitles_enabled."""
         from src import assembler_adapter
 
-        fake_video = str(tmp_path / "lingo.mp4")
+        fake_video = str(tmp_path / "output.mp4")
         open(fake_video, "w").close()
 
         mock_backend = MagicMock()
@@ -255,7 +281,7 @@ class TestAssemblerAdapter:
         assert "subtitles_enabled" not in kwargs
         assert "segments" not in kwargs
 
-    def test_local_fallback_used_when_lingo_unavailable(self, tmp_path):
+    def test_local_fallback_used_when_backend_returns_none(self, tmp_path):
         """When the backend returns None, _local_moviepy_assemble must be called."""
         from src import assembler_adapter
 

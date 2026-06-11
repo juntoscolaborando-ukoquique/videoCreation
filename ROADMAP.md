@@ -3,33 +3,31 @@
 ## Phase 1: Core Pipeline Foundation ✅
 - [x] Define Pydantic schema (`VideoConfiguration`, `VisualAssetConfig`)
 - [x] Create TTS adapter with edge_tts + silent fallback
-- [x] Create image adapter with FootageGeneratorV2 + Pillow fallback
-- [x] Create subtitle adapter with word-rate segmentation
-- [x] Create assembler adapter with VideoAssembler + moviepy fallback
+- [x] Create image adapter with Cloudflare/SiliconFlow + Picsum/Pillow fallback
+- [x] Create assembler adapter with moviepy (native implementation)
 - [x] Refactor assembler adapter to use backend injection (`_default_backend`, `backend=` parameter) for improved testing and performance
 - [x] Refactor orchestrator to use adapter modules
 - [x] Create default configuration file; wire all hardcoded defaults through `config_loader`
-- [x] Centralise Lingo_PERSONAS path in `lingo_utils`; resolve via env var → config → default
 - [x] Write test suite (35 tests, 11 flows)
 - [x] Write README.md, ROADMAP.md, and CHANGELOG.md
 
 ## Phase 2: Real TTS Integration
 - [x] Add TTS voice selection via config (`tts.voice` in `default_config.yaml`)
 - [x] Support multi-language TTS — `Language` enum (`en`, `es`, `zh`, `fr`, `de`, `pt`); voice resolved via config `language_voices` map → hardcoded map → config default
-- [x] Expand TTS dispatcher natively (edge_tts, openai) — decoupled from Lingo_PERSONAS
+- [x] Expand TTS dispatcher natively (edge_tts, openai)
 - [x] Add TTS audio caching to avoid re-generation
 - [x] **TTS Speaking Rate Control**: Support adjustable speech rate (e.g., `-10%`) via `tts.rate` in config.
 - [ ] Test with long-form speech content (> 5 minutes)
 
 ## Phase 3: AI Image Generation
-- [x] Integrate Pollinations provider for real AI image generation — live via Lingo_PERSONAS `FootageGeneratorV2` + `PollinationsProvider`
-- [x] Add HuggingFace Flux/SDXL provider with automatic failover — `HuggingFaceFluxProvider` + `HuggingFaceSDProvider` + Picsum fallback already in Lingo's provider architecture
-- [x] Support image style presets (photorealistic, cinematic, artistic, cartoon) — `style` param flows through `generate_images_batch` → `ProviderManager` → each provider
+- [x] Integrate Pollinations provider support
+- [x] Add HuggingFace Flux/SDXL provider support
+- [x] Support image style presets (photorealistic, cinematic, artistic, cartoon)
 - [ ] Implement image modification via img2img (SDXL or similar)
 - [ ] Add image caching and deduplication
 
 ## Phase 4: Advanced Video Features
-- [x] Own subtitle burn-in with correct descender rendering, independent of Lingo — `_burn_subtitles` + `_render_subtitle_frame` use `font.getmetrics()` (ascent + descent) instead of `textbbox`; Lingo always receives `add_captions=False` to prevent double rendering and bypass its clipping bug
+- [x] Own subtitle burn-in with correct descender rendering
 - [x] Dynamic orientation support (Vertical 9:16 and Horizontal 16:9) and dimension resolution
 - [ ] **Scene-based Precision Mode**: Implement `VideoScene` model for granular speech-to-visual synchronization (per-scene TTS and timing). Reference: `TANDA_3/VideoCreation-06-FALLIDO-MODO_ESCENAS`
 - [ ] Whisper-based forced subtitle alignment (replace word-rate estimation)

@@ -2,6 +2,20 @@
 
 ## [Unreleased]
 
+### Removed
+- `vendor/Lingo_PERSONAS/` — removed vendored Lingo_PERSONAS directory; the pipeline no longer depends on it.
+- `test_pollinations.py` and `test_sf.py` — deleted root-level smoke scripts that relied on the Lingo_PERSONAS vendor tree.
+- `src/lingo_utils.py` and `src/backends/lingo_assembler_backend.py` — dead code, no longer imported by anything in the pipeline.
+- `assembler_adapter` — removed `_NullBackend` and `_get_default_backend()`; `_local_moviepy_assemble` is now the unconditional default, `backend=` parameter kept for test injection.
+- `orchestrator.py` — removed `_sanitize_title()` alias; call site now uses `sanitize_filename()` directly.
+
+### Changed
+- `src/schema.py` — `VideoConfiguration` now emits a `UserWarning` at construction time when `image_modification_instructions` is set, surfacing the `NotImplementedError` before the pipeline runs.
+- `src/subtitle_adapter.py` — logs a warning when `total_duration` is `None` so silent timing drift is visible in logs.
+- `src/image_adapter.py` — `.env` loading moved out of module scope into a lazy `_ensure_env()` helper; importing the module no longer has filesystem side effects.
+- `src/orchestrator.py` — documented that adapter config reads always go through the module-level singleton, regardless of the injected `ConfigLoader`.
+- Scrubbed remaining Lingo references from docstrings, comments, and test variable names across `src/` and `tests/`.
+
 ## [0.3.0] - 2026-06-08
 
 ### Added

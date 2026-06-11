@@ -1,9 +1,13 @@
 # Video outputs
 output/
+test_out/
 *.mp4
 *.mov
 *.avi
 *.webm
+
+# Generated test artefacts
+test_cf_out.png
 
 # Python
 __pycache__/

@@ -1,5 +1,4 @@
 # VideoCreation — Default Configuration
-# Mirrors relevant settings from Lingo_PERSONAS config.yaml
 
 ## TTS Settings
 tts:
@@ -21,8 +20,9 @@ tts:
 image:
   style: "photorealistic"
   aspect_ratio: "9:16"       # Portrait (TikTok/Shorts/Reels)
-  engine: "cloudflare"       # Options: cloudflare, siliconflow, huggingface, pollinations (local only)
-  use_picsum: false          # Fetch seeded stock photos from picsum.photos as fallback
+  engine: "cloudflare"       # Options: cloudflare, siliconflow, picsum
+  use_picsum: false          # Set to true to use Picsum as the global default engine.
+                             # Equivalent to setting image_engine: picsum on every video config.
 
 ## Cloudflare Workers AI
 # Credentials are read from env vars: CLOUDFLARE_ACCOUNT_ID and CLOUDFLARE_API_TOKEN
@@ -30,23 +30,12 @@ image:
 cloudflare:
   model: "@cf/black-forest-labs/flux-1-schnell"
   timeout: 90
-  max_retries: 2
-
-## Pollinations Direct API
-pollinations:
-  timeout: 90               # seconds per image request
-  retries: 3                # attempts before giving up on a prompt
-  retry_delay: 5            # seconds to wait between retries
-  inter_image_delay: 2      # seconds to wait between successive images
-  base_url: "https://image.pollinations.ai/prompt/"
 
 ## Video Output
 video:
   width: 1080
   height: 1920
   fps: 30
-  bitrate: "8000k"
-  default_format: "mp4"
 
 ## Subtitle Settings
 subtitles:
@@ -61,11 +50,3 @@ subtitles:
   max_words_per_chunk: 8
   max_chars_per_line: 42   # wrap text before this many characters per line
 
-## Transitions
-transitions:
-  fade_duration: 0.5
-  image_duration: 3.0
-
-## Lingo_PERSONAS
-lingo:
-  root: "./vendor/Lingo_PERSONAS"

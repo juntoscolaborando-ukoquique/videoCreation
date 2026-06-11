@@ -2,11 +2,10 @@
 Image Adapter — AI image generation & modification bridge.
 
 Provider priority:
-  1. FootageGeneratorV2 (Lingo_PERSONAS, default) — Cloudflare Workers AI →
-     SiliconFlow → HuggingFace → Pollinations (blocked on VPS, skipped)
-  2. Picsum (seed-based) — only when ``image_engine: picsum`` is explicitly set;
-     free, no auth, deterministic per prompt keyword seed
-  3. Pillow placeholder fallback — offline / testing, when all others fail
+  1. Cloudflare Workers AI (native)
+  2. SiliconFlow (native)
+  3. Picsum (seed-based) — only when ``image_engine: picsum`` is explicitly set
+  4. Pillow placeholder fallback — offline / testing, when all others fail
 """
 
 import os
@@ -14,20 +13,29 @@ import re
 import shutil
 import time
 import logging
+import base64
+import requests
 from pathlib import Path
 from typing import List, Optional
-from urllib.parse import quote
 
-try:
-    from dotenv import load_dotenv
-    load_dotenv(Path(__file__).resolve().parent.parent / ".env", override=False)
-except ImportError:
-    pass  # python-dotenv not installed — credentials must come from the environment directly
-
-from src.lingo_utils import ensure_lingo_on_path
 from src import config_loader
 
 logger = logging.getLogger(__name__)
+
+_env_loaded = False
+
+
+def _ensure_env() -> None:
+    """Load .env credentials once, lazily, on first use."""
+    global _env_loaded
+    if _env_loaded:
+        return
+    try:
+        from dotenv import load_dotenv
+        load_dotenv(Path(__file__).resolve().parent.parent / ".env", override=False)
+    except ImportError:
+        pass
+    _env_loaded = True
 
 
 # ---------------------------------------------------------------------------
@@ -43,10 +51,8 @@ def generate_from_prompts(
     width: Optional[int] = None,
     height: Optional[int] = None,
 ) -> List[str]:
-    """Generate one image per prompt and return a list of file paths.
-
-    Provider priority: Picsum (seeded) → FootageGeneratorV2 → Pillow placeholders.
-    """
+    """Generate one image per prompt and return a list of file paths."""
+    _ensure_env()
     cfg = config_loader.image()
     if style is None:
         style = cfg.get("style", "photorealistic")
@@ -65,33 +71,42 @@ def generate_from_prompts(
 
     os.makedirs(output_dir, exist_ok=True)
 
-    # 1. Picsum — only when explicitly requested via image_engine: picsum
+    # Engines declared in schema but not yet implemented
+    if engine in ("huggingface", "pollinations"):
+        raise NotImplementedError(
+            f"image_engine='{engine}' is declared in the schema but not yet implemented. "
+            "Use 'cloudflare' or 'siliconflow' (requires credentials in .env), "
+            "or 'picsum' for seed-based stock photos."
+        )
+
+    # Apply the global use_picsum config flag when no explicit engine was requested.
+    # This lets users set `use_picsum: true` in default_config.yaml once instead of
+    # adding `image_engine: picsum` to every per-video config file.
+    if engine is None and cfg.get("use_picsum", False):
+        engine = "picsum"
+
+    # 1. Picsum — only when explicitly requested
     if engine == "picsum":
         stock_dir = os.path.join(output_dir, "stock")
         os.makedirs(stock_dir, exist_ok=True)
         paths = _picsum_batch(prompts, stock_dir, width, height)
         if paths:
             return paths
-        logger.warning("Picsum failed or returned partial results — trying next provider.")
+        logger.warning("Picsum failed — trying next provider.")
 
-    # 2. FootageGeneratorV2 (Lingo) — default for all other engines
-    #    The engine hint is forwarded so FootageGeneratorV2 can prioritise
-    #    a specific provider if it supports it (e.g. "siliconflow").
-    #    Unknown engine values are logged and ignored gracefully.
-    if engine is not None and engine != "picsum":
-        logger.info("Requested image engine: '%s' — forwarding to FootageGeneratorV2.", engine)
+    # 2. AI providers — Cloudflare first, then SiliconFlow
     gen_dir = os.path.join(output_dir, "generated")
     os.makedirs(gen_dir, exist_ok=True)
-    lingo_paths = _try_footage_generator(
-        prompts, gen_dir, style, aspect_ratio,
-        preferred_engine=engine if engine != "picsum" else None,
+    ai_paths = _native_ai_generation(
+        prompts, gen_dir, style, aspect_ratio, width, height, preferred_engine=engine
     )
-    if lingo_paths:
-        return lingo_paths
+    if ai_paths:
+        return ai_paths
 
     # 3. Pillow placeholders
-    logger.warning("FootageGeneratorV2 unavailable — using Pillow placeholder images.")
+    logger.warning("AI image generation unavailable — using Pillow placeholder images.")
     return _generate_placeholder_images(prompts, gen_dir, width=width, height=height)
+
 
 
 def copy_provided_images(image_paths: List[str], output_dir: str) -> List[str]:
@@ -110,14 +125,7 @@ def copy_provided_images(image_paths: List[str], output_dir: str) -> List[str]:
 
 
 def modify_images(image_paths: List[str], instructions: str) -> List[str]:
-    """Apply AI modifications to images.
-
-    .. note::
-        Not yet implemented. Raises ``NotImplementedError`` explicitly so
-        the caller gets a clear failure instead of silently getting
-        unmodified images back.
-        Remove ``image_modification_instructions`` from your config to proceed.
-    """
+    """Apply AI modifications to images (not yet implemented)."""
     raise NotImplementedError(
         f"image_modification_instructions is set ('{instructions[:60]}') "
         "but modify_images() is not yet implemented. "
@@ -130,12 +138,7 @@ def modify_images(image_paths: List[str], instructions: str) -> List[str]:
 # ---------------------------------------------------------------------------
 
 def _prompt_to_seed(prompt: str) -> str:
-    """Extract the first few meaningful words from a prompt to use as a Picsum seed.
-
-    Picsum's seed endpoint returns a consistent image for the same seed string,
-    so different prompts get different images and reruns are deterministic.
-    Example: 'A futuristic city skyline at night' → 'futuristic-city-skyline'
-    """
+    """Extract the first few meaningful words from a prompt for Picsum seed."""
     stopwords = {"a", "an", "the", "at", "in", "on", "of", "and", "with", "for", "to", "is"}
     words = re.sub(r"[^a-z0-9 ]", "", prompt.lower()).split()
     keywords = [w for w in words if w not in stopwords][:4]
@@ -148,14 +151,7 @@ def _picsum_batch(
     width: int,
     height: int,
 ) -> List[str]:
-    """Fetch one Picsum image per prompt using a keyword-derived seed.
-
-    URL format: https://picsum.photos/seed/{seed}/{width}/{height}.jpg
-    Picsum returns a 302 redirect — must follow with allow_redirects=True.
-    Same seed → same image every run. Different prompts → different seeds → different images.
-    """
-    import requests
-
+    """Fetch one Picsum image per prompt using a keyword-derived seed."""
     paths: List[str] = []
     timeout = 30
 
@@ -187,68 +183,170 @@ def _picsum_batch(
             "discarding partial results to maintain video synchronization.",
             len(paths), len(prompts),
         )
-        return []  # Caller will fall through to next provider (e.g. AI generation)
+        return []
 
     logger.info("Picsum batch: %d/%d images fetched successfully.", len(paths), len(prompts))
     return paths
 
 
 # ---------------------------------------------------------------------------
-# Lingo_PERSONAS FootageGeneratorV2 (secondary)
+# Native AI Providers (Cloudflare & SiliconFlow)
 # ---------------------------------------------------------------------------
 
-def _try_footage_generator(
+def _native_ai_generation(
     prompts: List[str],
     output_dir: str,
     style: str,
     aspect_ratio: str,
+    width: int,
+    height: int,
     preferred_engine: Optional[str] = None,
 ) -> Optional[List[str]]:
-    """Attempt to use FootageGeneratorV2 from Lingo_PERSONAS.
+    """Generate images using native AI providers (Cloudflare or SiliconFlow)."""
+    paths: List[str] = []
 
-    Returns None if Lingo is not installed. Re-raises runtime errors.
-    Credentials for Cloudflare, SiliconFlow, and HuggingFace are read
-    from environment variables automatically by FootageGeneratorV2.
+    # Try preferred engine first, then fallback
+    providers = []
+    if preferred_engine == "cloudflare":
+        providers = ["cloudflare"]
+    elif preferred_engine == "siliconflow":
+        providers = ["siliconflow"]
+    else:
+        providers = ["cloudflare", "siliconflow"]
 
-    preferred_engine: optional hint forwarded to FootageGeneratorV2 if it
-        supports provider selection (e.g. ``"siliconflow"``). Ignored if
-        FootageGeneratorV2 does not accept the parameter.
-    """
-    try:
-        ensure_lingo_on_path()
-        from shorts_creator.footage_generator_v2 import FootageGeneratorV2  # type: ignore[import-untyped]
-    except (ImportError, Exception) as exc:
-        logger.warning("FootageGeneratorV2 not available (%s).", exc)
-        return None
+    for provider in providers:
+        if provider == "cloudflare":
+            paths = _try_cloudflare(prompts, output_dir, width, height, style)
+            if paths:
+                return paths
+        elif provider == "siliconflow":
+            paths = _try_siliconflow(prompts, output_dir, width, height, style)
+            if paths:
+                return paths
 
-    try:
-        gen = FootageGeneratorV2(
-            output_dir=output_dir,
-            cloudflare_account_id=os.environ.get('CLOUDFLARE_ACCOUNT_ID') or None,
-            cloudflare_token=os.environ.get('CLOUDFLARE_API_TOKEN') or None,
-            siliconflow_key=os.environ.get('SILICONFLOW_API_KEY') or None,
-            huggingface_key=os.environ.get('HUGGINGFACE_API_KEY') or None,
-        )
-        # Explanation: `or None` converts both a missing key (returns None from get)
-        # and an explicitly empty string (e.g. KEY="" in .env) to None, so
-        # FootageGeneratorV2 correctly skips that provider instead of attempting
-        # authentication with an empty credential string.
-        batch_kwargs = dict(style=style, aspect_ratio=aspect_ratio, delay=3.0)
-        if preferred_engine is not None:
-            try:
-                paths = gen.generate_images_batch(
-                    prompts, provider=preferred_engine, **batch_kwargs
-                )
-            except TypeError:
-                # FootageGeneratorV2 doesn't accept provider= — fall back to default call
-                logger.debug("FootageGeneratorV2 does not support provider= kwarg — ignoring engine hint.")
-                paths = gen.generate_images_batch(prompts, **batch_kwargs)
-        else:
-            paths = gen.generate_images_batch(prompts, **batch_kwargs)
-        return paths if paths else None
-    except Exception as exc:
-        logger.error("FootageGeneratorV2 raised an unexpected error: %s", exc)
-        raise
+    return None
+
+
+def _try_cloudflare(
+    prompts: List[str],
+    output_dir: str,
+    width: int,
+    height: int,
+    style: str,
+) -> List[str]:
+    """Try Cloudflare Workers AI for image generation."""
+    account_id = os.environ.get("CLOUDFLARE_ACCOUNT_ID")
+    api_token = os.environ.get("CLOUDFLARE_API_TOKEN")
+
+    if not account_id or not api_token:
+        logger.debug("Cloudflare credentials missing — skipping.")
+        return []
+
+    model = config_loader.cloudflare().get("model", "@cf/black-forest-labs/flux-1-schnell")
+    url = f"https://api.cloudflare.com/client/v4/accounts/{account_id}/ai/run/{model}"
+    headers = {
+        "Authorization": f"Bearer {api_token}",
+        "Content-Type": "application/json"
+    }
+
+    paths: List[str] = []
+    timeout = config_loader.cloudflare().get("timeout", 90)
+
+    for idx, prompt in enumerate(prompts):
+        logger.info("[%d/%d] Cloudflare AI — %s", idx + 1, len(prompts), prompt[:60])
+        full_prompt = f"{style} {prompt}"
+        try:
+            payload = {"prompt": full_prompt}
+            response = requests.post(url, headers=headers, json=payload, timeout=timeout)
+            if response.status_code == 200:
+                filename = f"cloudflare_{idx:03d}.png"
+                file_path = os.path.join(output_dir, filename)
+                if "image" in response.headers.get("Content-Type", ""):
+                    with open(file_path, "wb") as f:
+                        f.write(response.content)
+                else:
+                    data = response.json()
+                    if "result" in data and "image" in data["result"]:
+                        with open(file_path, "wb") as f:
+                            f.write(base64.b64decode(data["result"]["image"]))
+                    else:
+                        logger.warning("  Cloudflare returned unexpected response format.")
+                        continue
+                paths.append(file_path)
+                logger.info("  ✓ saved → %s", file_path)
+            else:
+                logger.warning("  Cloudflare HTTP %d: %s", response.status_code, response.text)
+                break
+        except Exception as exc:
+            logger.warning("  Cloudflare failed: %s", exc)
+            break
+
+        if idx < len(prompts) - 1:
+            time.sleep(3)
+
+    return paths if len(paths) == len(prompts) else []
+
+
+def _try_siliconflow(
+    prompts: List[str],
+    output_dir: str,
+    width: int,
+    height: int,
+    style: str,
+) -> List[str]:
+    """Try SiliconFlow for image generation."""
+    api_key = os.environ.get("SILICONFLOW_API_KEY")
+    if not api_key:
+        logger.debug("SiliconFlow API key missing — skipping.")
+        return []
+
+    url = "https://api.siliconflow.cn/v1/images/generations"
+    headers = {
+        "Authorization": f"Bearer {api_key}",
+        "Content-Type": "application/json"
+    }
+
+    paths: List[str] = []
+    timeout = 90
+
+    for idx, prompt in enumerate(prompts):
+        logger.info("[%d/%d] SiliconFlow — %s", idx + 1, len(prompts), prompt[:60])
+        full_prompt = f"{style} {prompt}"
+        try:
+            payload = {
+                "model": "black-forest-labs/FLUX.1-schnell",
+                "prompt": full_prompt,
+                "image_size": f"{width}x{height}",
+                "num_inference_steps": 4,
+                "num_images": 1
+            }
+            response = requests.post(url, headers=headers, json=payload, timeout=timeout)
+            if response.status_code == 200:
+                data = response.json()
+                if "data" in data and len(data["data"]) > 0 and "url" in data["data"][0]:
+                    img_url = data["data"][0]["url"]
+                    img_response = requests.get(img_url, timeout=30)
+                    if img_response.status_code == 200:
+                        filename = f"siliconflow_{idx:03d}.png"
+                        file_path = os.path.join(output_dir, filename)
+                        with open(file_path, "wb") as f:
+                            f.write(img_response.content)
+                        paths.append(file_path)
+                        logger.info("  ✓ saved → %s", file_path)
+                else:
+                    logger.warning("  SiliconFlow returned unexpected response format.")
+                    continue
+            else:
+                logger.warning("  SiliconFlow HTTP %d: %s", response.status_code, response.text)
+                break
+        except Exception as exc:
+            logger.warning("  SiliconFlow failed: %s", exc)
+            break
+
+        if idx < len(prompts) - 1:
+            time.sleep(3)
+
+    return paths if len(paths) == len(prompts) else []
 
 
 # ---------------------------------------------------------------------------

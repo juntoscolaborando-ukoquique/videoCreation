@@ -1,0 +1,57 @@
+# Video: Gloria — "Cuidando cada detalle en equipo"
+# Basado en: /root/a_VIDEO_GENERATION/VIDEO_DESDE_PERSONAS/GLORIA_accion.md
+#
+# NOTA: El "texto en pantalla" por escena no está soportado por esta app.
+# Los subtítulos se generan automáticamente desde el audio de voz en off.
+# Si tenés un archivo de música de fondo (guitarra/piano suave), descomentá background_music.
+#
+# Ejecutar con:
+#   python -m src.main --config config/gloria_accion.yaml
+
+title: "Gloria — Tu bienestar, nuestro equipo"
+language: es
+orientation: vertical
+subtitles_enabled: true
+output_format: "mp4"
+tts_rate: "-12%"
+
+# ⚠️  VOZ FEMENINA REQUERIDA:
+# Antes de correr este config, editá default_config.yaml y cambiá:
+#   language_voices:
+#     es: "es-AR-ElenaNeural"    # femenina, cálida — reemplaza es-AR-TomasNeural
+
+# background_music: "assets/music/guitarra_suave.mp3"
+
+speech_content: |
+  Gloria, para nosotros tu bienestar es lo primero. Por eso, en casa hemos armado un equipo de trabajo
+  muy ordenado. Queremos registrar datos muy sencillos de tu día a día, como cómo dormiste o cómo te sentís,
+  para tener una fotografía perfecta de tu salud.
+
+  Con esos datos limpios y organizados, nuestro médico validador en casa se encargará de hablar directamente,
+  de colega a colega, con los mejores especialistas del mundo. Así, tu caso se presenta con el máximo rigor
+  científico, sin que vos tengas que desgastarte explicando nada.
+
+  Esta información viaja directo a los comités científicos de los centros médicos más avanzados.
+  No les pedimos un favor; les presentamos un caso de estudio único y valioso para sus investigaciones,
+  lo que despierta su verdadero interés científico.
+
+  Cuando estos centros respondan, vamos a analizar con lupa cada una de sus propuestas.
+  Revisaremos qué estudios piden, si sugieren telemedicina desde casa o qué condiciones ponen.
+  Nosotros filtramos todo primero.
+
+  El objetivo de este plan es que no gastemos energía, tiempo ni recursos de forma innecesaria.
+  No tomaremos ninguna decisión apresurada ni planificaremos viajes extenuantes.
+  Todo se evalúa primero a la distancia para proteger tu paz.
+
+  En unos días, cuando la plataforma esté lista, te invitaremos a empezar este registro diario tan simple.
+  Todo está pensado para cuidarte, blindar tu salud y avanzar con paso firme y seguro. Estamos con vos.
+
+visual_assets:
+  asset_type: "text_prompts"
+  prompts:
+    - "A clear wooden table with a tablet showing simple health charts — a steady heartbeat line and a calm sleep graph — next to a steaming cup of tea. Soft blue and green pastel tones, warm and peaceful atmosphere, 2D modern flat illustration style"
+    - "A professional video call split screen: a friendly doctor with a stethoscope smiling on one side, and a neatly organized digital medical folder on the other. Clean, minimal, therapeutic color palette, 2D explainer video style"
+    - "A world map with soft glowing lines connecting to two elite medical centers in the United States highlighted in gentle light. Secure data traveling visually as clean dotted paths. Calm, minimal, flat illustration, blue and green tones"
+    - "A balanced scale: one side holds a document with an international hospital seal, the other side holds symbols of home comfort — a soft armchair and a family silhouette. Minimalist 2D illustration, warm and balanced mood"
+    - "A person resting peacefully in a cozy armchair surrounded by plants, while a laptop screen in the background shows a task completing automatically. Calm, warm home atmosphere, soft pastel colors, 2D modern illustration"
+    - "Two hands gently clasping each other with warmth over a wooden table. A small clean notepad rests nearby. Warm, cozy home background, soft lighting, hopeful and affectionate mood, 2D flat illustration style"

@@ -1,8 +1,5 @@
 """
-Assembler Adapter — video assembly bridge to Lingo_PERSONAS VideoAssembler.
-
-Falls back to a pure-moviepy local assembly if the Lingo_PERSONAS import
-is unavailable.
+Assembler Adapter — video assembly bridge using moviepy.
 
 Subtitle burn-in is handled by the orchestrator as a separate post-processing
 step; this adapter is responsible only for assembling audio and visuals.
@@ -14,14 +11,9 @@ from typing import List, Optional
 
 from src import config_loader
 from src.backends import AssemblerBackend
-from src.backends.lingo_assembler_backend import LingoAssemblerBackend
 from src.utils import sanitize_filename
 
 logger = logging.getLogger(__name__)
-
-# Module-level default backend — instantiated once, shared across calls.
-# Pass a different backend to assemble_video() to override (e.g. in tests).
-_default_backend: AssemblerBackend = LingoAssemblerBackend()
 
 
 # ---------------------------------------------------------------------------
@@ -48,9 +40,9 @@ def assemble_video(
     Parameters
     ----------
     backend:
-        Assembler backend to use. Defaults to the module-level
-        ``_default_backend`` (``LingoAssemblerBackend``). Pass an alternative
-        to swap Lingo for another provider or to inject a mock in tests.
+        Optional assembler backend. When provided, its ``assemble()`` method
+        is called first; if it returns ``None`` the local moviepy path is used
+        as a fallback. Pass a mock here in tests to avoid real video assembly.
 
     Returns
     -------
@@ -65,17 +57,19 @@ def assemble_video(
     os.makedirs(output_dir, exist_ok=True)
     output_filename = f"{sanitize_filename(title)}.{output_format}"
 
-    active_backend = backend if backend is not None else _default_backend
-    path = active_backend.assemble(
-        audio_path=audio_path,
-        visual_files=visual_files,
-        title=title,
-        output_dir=output_dir,
-        output_filename=output_filename,
-        background_music=background_music,
-        width=width,
-        height=height,
-    )
+    path: Optional[str] = None
+    if backend is not None:
+        path = backend.assemble(
+            audio_path=audio_path,
+            visual_files=visual_files,
+            title=title,
+            output_dir=output_dir,
+            output_filename=output_filename,
+            background_music=background_music,
+            width=width,
+            height=height,
+        )
+
     if path is None:
         path = _local_moviepy_assemble(
             audio_path=audio_path,
@@ -100,7 +94,7 @@ def _local_moviepy_assemble(
     width: int,
     height: int,
 ) -> str:
-    """Assemble video using moviepy directly (no Lingo dependency).
+    """Assemble video using moviepy directly.
 
     Produces a video without subtitles; subtitle burn-in is handled by
     ``subtitle_renderer.burn_subtitles``.

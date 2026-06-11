@@ -200,10 +200,17 @@ def _ffmpeg_burn(video_path: str, ass_path: str, output_path: str) -> bool:
 
 
 # ---------------------------------------------------------------------------
-# render_subtitle_frame — kept for tests
+# _render_subtitle_frame_legacy_test_only — Pillow geometry helper for tests
+# ---------------------------------------------------------------------------
+# WARNING: This function is NOT part of the production subtitle pipeline.
+# The production path is: burn_subtitles() → _ffmpeg_burn() (ASS/ffmpeg).
+# This Pillow-based renderer exists only to let test_subtitle_renderer.py
+# verify text-box geometry and descender handling in isolation, without
+# needing a real video file or ffmpeg call.
+# Do NOT wire this into any new production code paths.
 # ---------------------------------------------------------------------------
 
-def render_subtitle_frame(
+def _render_subtitle_frame_legacy_test_only(
     text: str,
     width: int,
     height: int,
@@ -214,7 +221,14 @@ def render_subtitle_frame(
     margin: int,
     max_chars: int,
 ) -> Image.Image:
-    """Kept for tests; still uses Pillow."""
+    """Pillow-based subtitle frame renderer — **test-only legacy helper**.
+
+    .. warning::
+        This is **not** the production subtitle path. The production pipeline
+        uses :func:`burn_subtitles` which delegates to ffmpeg/ASS via
+        :func:`_ffmpeg_burn`. This function exists solely to support geometry
+        tests in ``test_subtitle_renderer.py``.
+    """
     lines = textwrap.wrap(text, width=max_chars) or [text]
     lines = lines[:2] # Force 2 lines here too
     
