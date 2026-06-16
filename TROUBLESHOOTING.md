@@ -41,3 +41,19 @@ HUGGINGFACE_API_KEY=your_key
 ```
 
 Then set `image_engine: siliconflow` (or `cloudflare`) in your config yaml to skip straight to the working provider without waiting for Pollinations to fail first.
+
+## Cloud
+flare falla en una imagen y el batch entero cae a placeholders
+
+**Síntoma:** Las primeras imágenes se generan bien, pero una falla (HTTP 400 NSFW o conexión cortada) y el resto del batch aparece como placeholders grises con texto en lugar de imágenes AI.
+
+**Causa original:** `_try_cloudflare()` hacía `break` al primer error, abandonando todas las imágenes pendientes. Si el batch resultaba incompleto (menos imágenes que prompts), devolvía lista vacía y el pipeline caía al generador de placeholders Pillow para todas las imágenes restantes.
+
+**Fix aplicado (image_adapter.py):** Cada prompt ahora reintenta hasta 3 veces con espera incremental (5s, 10s) antes de rendirse. Los errores se tratan según su tipo:
+- Errores de conexión/timeout → reintenta hasta 3 veces
+- HTTP 400 (NSFW o prompt inválido) → salta la imagen inmediatamente sin reintentar, el prompt no va a pasar el filtro
+- HTTP 401 (credenciales inválidas) → aborta el proveedor completo
+
+Con reintentos, los fallos transitorios de red se resuelven solos y los fallos por filtro NSFW se resuelven reescribiendo el prompt para evitar términos que el modelo detecta como sensibles (anatomía, fluidos corporales, descripciones de tejido) aunque el contexto sea médico.
+
+**Por qué no se implementó fallback a imagen anterior para slots fallidos:** Cuando una imagen individual agota los reintentos, el batch devuelve vacío y el pipeline usa placeholders. Un enfoque alternativo sería reutilizar la imagen del slot anterior para mantener imágenes AI en todo el video. Esto no se implementó porque añade complejidad innecesaria: con reintentos los fallos transitorios ya se absorben, y los fallos permanentes (API caída, credenciales inválidas) afectan todo el batch de todas formas, no un slot individual. La solución correcta ante un fallo permanente es corregir el prompt o las credenciales, no enmascarar el problema con una imagen repetida.

@@ -251,35 +251,52 @@ def _try_cloudflare(
 
     paths: List[str] = []
     timeout = config_loader.cloudflare().get("timeout", 90)
+    max_retries = 3
 
     for idx, prompt in enumerate(prompts):
         logger.info("[%d/%d] Cloudflare AI — %s", idx + 1, len(prompts), prompt[:60])
         full_prompt = f"{style} {prompt}"
-        try:
-            payload = {"prompt": full_prompt}
-            response = requests.post(url, headers=headers, json=payload, timeout=timeout)
-            if response.status_code == 200:
-                filename = f"cloudflare_{idx:03d}.png"
-                file_path = os.path.join(output_dir, filename)
-                if "image" in response.headers.get("Content-Type", ""):
-                    with open(file_path, "wb") as f:
-                        f.write(response.content)
-                else:
-                    data = response.json()
-                    if "result" in data and "image" in data["result"]:
+        success = False
+
+        for attempt in range(max_retries):
+            if attempt > 0:
+                wait = 5 * attempt
+                logger.info("  retry %d/%d after %ds...", attempt + 1, max_retries, wait)
+                time.sleep(wait)
+            try:
+                payload = {"prompt": full_prompt}
+                response = requests.post(url, headers=headers, json=payload, timeout=timeout)
+                if response.status_code == 200:
+                    filename = f"cloudflare_{idx:03d}.png"
+                    file_path = os.path.join(output_dir, filename)
+                    if "image" in response.headers.get("Content-Type", ""):
                         with open(file_path, "wb") as f:
-                            f.write(base64.b64decode(data["result"]["image"]))
+                            f.write(response.content)
                     else:
-                        logger.warning("  Cloudflare returned unexpected response format.")
-                        continue
-                paths.append(file_path)
-                logger.info("  ✓ saved → %s", file_path)
-            else:
-                logger.warning("  Cloudflare HTTP %d: %s", response.status_code, response.text)
-                break
-        except Exception as exc:
-            logger.warning("  Cloudflare failed: %s", exc)
-            break
+                        data = response.json()
+                        if "result" in data and "image" in data["result"]:
+                            with open(file_path, "wb") as f:
+                                f.write(base64.b64decode(data["result"]["image"]))
+                        else:
+                            logger.warning("  Cloudflare returned unexpected response format.")
+                            continue
+                    paths.append(file_path)
+                    logger.info("  ✓ saved → %s", file_path)
+                    success = True
+                    break
+                elif response.status_code == 401:
+                    logger.warning("  Cloudflare auth error — skipping provider.")
+                    return []
+                else:
+                    logger.warning("  Cloudflare HTTP %d: %s", response.status_code, response.text[:200])
+                    # NSFW or permanent error — no point retrying
+                    if response.status_code == 400:
+                        break
+            except Exception as exc:
+                logger.warning("  Cloudflare attempt %d failed: %s", attempt + 1, exc)
+
+        if not success:
+            logger.warning("  [%d/%d] failed after %d attempts — skipping image.", idx + 1, len(prompts), max_retries)
 
         if idx < len(prompts) - 1:
             time.sleep(3)

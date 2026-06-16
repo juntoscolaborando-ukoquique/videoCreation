@@ -2,6 +2,20 @@
 
 ## [Unreleased]
 
+### Added
+- `config/esselstyn_es.yaml` — new video config for "Prevenir y Revertir las Enfermedades del Corazón", based on Dr. Caldwell Esselstyn's lecture. Horizontal 16:9 orientation, Spanish TTS at `-8%` rate, 8 Cloudflare AI image prompts, subtitles enabled.
+
+### Added
+- `src/assembler_adapter.py` — `_ProgressLogger` class replaces the silent `logger=None` in `write_videofile`. Reports encoding progress every 10% milestone with estimated time remaining (e.g. `Encoding … 30% complete — ~5m 20s remaining`). Uses moviepy's `bars_callback(bar, total)` interface to convert frame counts to wall-clock ETA.
+
+### Fixed
+- `src/image_adapter.py` — `_try_cloudflare()` no longer aborts the entire batch on a single image failure. Each prompt now retries up to 3 times with exponential backoff (5s, 10s). NSFW/400 errors skip the image without retrying (permanent). Auth errors (401) abort the provider immediately. Images that exhaust retries are skipped individually and logged, allowing the rest of the batch to complete.
+
+### Added
+- `src/folder_watcher.py` — New Drop Folder Watcher daemon for asynchronous video generation integration.
+- `run_watcher.sh` — Convenience bash script to easily start the folder watcher.
+- State-based folder architecture (`watcher_folders/inbox`, `processing`, `done`, `failed`) for safe concurrent pipeline triggers.
+
 ### Removed
 - `vendor/Lingo_PERSONAS/` — removed vendored Lingo_PERSONAS directory; the pipeline no longer depends on it.
 - `test_pollinations.py` and `test_sf.py` — deleted root-level smoke scripts that relied on the Lingo_PERSONAS vendor tree.

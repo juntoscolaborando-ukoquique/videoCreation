@@ -6,6 +6,7 @@ step; this adapter is responsible only for assembling audio and visuals.
 """
 
 import os
+import re
 import logging
 from typing import List, Optional
 
@@ -138,6 +139,7 @@ def _local_moviepy_assemble(
         video = concatenate_videoclips(clips, method="compose").with_audio(audio)
         try:
             fps = config_loader.video().get("fps", 30)
+            progress_logger = _ProgressLogger(duration, logger)
             video.write_videofile(
                 output_path,
                 fps=fps,
@@ -145,7 +147,7 @@ def _local_moviepy_assemble(
                 audio_codec="aac",
                 threads=4,
                 preset="ultrafast",
-                logger=None,
+                logger=progress_logger,
             )
         finally:
             video.close()
@@ -154,3 +156,57 @@ def _local_moviepy_assemble(
 
     logger.info("Local assembly complete → %s", output_path)
     return output_path
+
+
+# ---------------------------------------------------------------------------
+# Progress logger — parses ffmpeg output and reports estimated time remaining
+# ---------------------------------------------------------------------------
+
+class _ProgressLogger:
+    """Feeds moviepy/ffmpeg progress lines to the module logger.
+
+    moviepy calls ``bars_callback(encoded_frames, total_frames)`` during
+    encoding.  We convert frames to wall-clock time and log a human-readable
+    progress line every ~10%.
+    """
+
+    def __init__(self, duration: float, log: logging.Logger) -> None:
+        self._duration = duration          # total video duration in seconds
+        self._log = log
+        self._last_pct: int = -1           # last reported 10% milestone
+        self._start_time: Optional[float] = None
+
+    # moviepy 2.x progress interface
+    def bars_callback(self, bar: int, total: int, **kwargs) -> None:
+        import time
+        if total <= 0:
+            return
+        if self._start_time is None:
+            self._start_time = time.time()
+
+        pct = int(bar / total * 100)
+        milestone = (pct // 10) * 10
+
+        if milestone > self._last_pct:
+            self._last_pct = milestone
+            elapsed = time.time() - self._start_time
+            if pct > 0:
+                eta = elapsed / (pct / 100) - elapsed
+                self._log.info(
+                    "  Encoding … %d%% complete — ~%s remaining",
+                    pct,
+                    _fmt_seconds(eta),
+                )
+            else:
+                self._log.info("  Encoding … starting")
+
+    # moviepy may also call print() — absorb silently
+    def __call__(self, message: str) -> None:
+        pass
+
+
+def _fmt_seconds(secs: float) -> str:
+    secs = max(0, int(secs))
+    if secs < 60:
+        return f"{secs}s"
+    return f"{secs // 60}m {secs % 60}s"

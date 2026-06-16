@@ -1,0 +1,93 @@
+# Video: "Tratar la causa para prevenir y revertir las enfermedades cardíacas"
+# Basado en la conferencia magistral del Dr. Caldwell Esselstyn — Northwest VEG
+#
+# Ejecutar con:
+#   python -m src.main --config config/esselstyn_es.yaml
+
+title: "Prevenir y Revertir las Enfermedades del Corazón — Dr. Esselstyn"
+language: es
+orientation: horizontal
+subtitles_enabled: true
+output_format: "mp4"
+tts_rate: "-8%"
+image_engine: cloudflare
+image_style: "cinematic documentary"
+
+speech_content: |
+  La enfermedad coronaria es la principal causa de muerte en el mundo occidental.
+  Pero el Dr. Caldwell Esselstyn, cirujano y director del programa cardiovascular
+  de la Clínica Cleveland, tiene una afirmación contundente:
+  esta enfermedad nunca debería existir.
+
+  La medicina moderna se convirtió en una industria multimillonaria
+  que trata los síntomas con fármacos, stents y cirugías de bypass.
+  Estos procedimientos alivian temporalmente el dolor,
+  pero no curan nada, porque no atacan la causa real: la alimentación.
+
+  Los datos históricos son reveladores.
+  En la China rural, en Papúa Nueva Guinea, en Okinawa y entre los indígenas Tarahumara de México,
+  las enfermedades cardiovasculares son prácticamente inexistentes.
+  El nexo común en todas estas culturas es una dieta basada en plantas,
+  baja en grasas y sin aceites refinados.
+
+  El secreto está en el endotelio: la capa interna de las arterias.
+  Esta delgada película de células es la chaqueta salvavidas de todo el sistema cardiovascular.
+  Cuando está sana, produce óxido nítrico, un gas vital que mantiene la sangre fluyendo suavemente,
+  dilata los vasos sanguíneos y previene la formación de placa.
+
+  Pero cada vez que consumimos grasas saturadas, productos de origen animal o aceites refinados,
+  producimos una lesión inmediata en el endotelio.
+  La capacidad de producir óxido nítrico cae en picada.
+  La sangre se vuelve pegajosa, el colesterol LDL penetra la pared arterial,
+  se oxida y forma las placas que eventualmente se rompen y causan infartos.
+
+  El Dr. Esselstyn demostró esto con pacientes reales.
+  Personas con enfermedad cardíaca terminal, a quienes la medicina convencional ya había desahuciado.
+  Las angiografías antes y después son impactantes:
+  arterias gravemente obstruidas volvieron a abrirse, lisas y saludables,
+  tras meses de adherencia estricta a una dieta basada en plantas.
+  La angina de pecho desapareció en la gran mayoría en cuestión de semanas.
+
+  El programa es claro en lo que prohíbe.
+  Nada de carne: ni roja, ni cerdo, ni pollo, ni pavo, ni pescado.
+  Nada de lácteos: ni leche, ni queso, ni yogur, ni mantequilla, ni siquiera desnatados.
+  Nada de huevos, ni yemas ni claras.
+
+  Y el punto más controvertido: ningún tipo de aceite.
+  Ni aceite de oliva, ni de coco, ni de girasol.
+  El aceite es grasa líquida pura al cien por cien,
+  y lesiona directamente las células endoteliales en el momento en que se consume.
+
+  Para quienes ya tienen enfermedad activa, también se eliminan los frutos secos y el aguacate
+  por su alto contenido graso, hasta que el endotelio se haya recuperado.
+
+  Entonces, ¿qué se come? Una alimentación basada en alimentos vegetales integrales.
+  Legumbres: lentejas, garbanzos, alubias, soja.
+  Cereales integrales: avena, arroz integral, quinoa, pan y pastas cien por cien integrales sin aceite.
+  Frutas enteras, no en jugo, para conservar la fibra y evitar picos de azúcar.
+  Y verduras de todo tipo, con especial énfasis en las de hoja verde oscura:
+  espinacas, kale, brócoli, acelgas, rúcula.
+
+  Esselstyn recomienda masticar estas verduras al vapor varias veces al día,
+  rociadas con un poco de vinagre balsámico.
+  El vinagre estimula las enzimas de la boca y reactiva de inmediato
+  la producción de óxido nítrico en las arterias.
+
+  El mensaje final del doctor es de empoderamiento total.
+  Decirle a un paciente que "modere" su dieta es una receta para el fracaso continuo.
+  La moderación solo ralentiza la progresión de la enfermedad, no la detiene ni la revierte.
+
+  Los pacientes no son víctimas indefensas de sus genes ni del envejecimiento.
+  El destino de su salud cardiovascular está, literalmente, en la punta de sus tenedores.
+
+visual_assets:
+  asset_type: "text_prompts"
+  prompts:
+    - "A dramatic wide shot of a modern hospital hallway with surgical lights overhead, a lone doctor in scrubs standing at the end, contemplative and still. Cinematic lighting, cool blue tones, documentary photography style"
+    - "A split world map showing industrialized Western nations highlighted in red versus rural regions of China, Papua New Guinea and Mexico in healthy green. Minimal infographic style, clean white background, documentary aesthetic"
+    - "A glowing smooth cylindrical pipe cross-section viewed from inside, walls lit with soft blue-green bioluminescent light representing healthy flow. Abstract scientific visualization, cinematic 3D render, clean and futuristic"
+    - "A clogged pipe cross-section showing thick yellow-orange buildup narrowing the interior passage to almost nothing, dark and gritty texture contrast. Abstract industrial metaphor, dramatic cinematic lighting"
+    - "A split-screen infographic: left panel shows a narrow dark pipe almost completely blocked, right panel shows the same pipe wide open with smooth walls and clear blue flow. Clean 2D medical infographic style, calm documentary aesthetic"
+    - "A warm kitchen counter covered in colorful whole foods: dark leafy greens, lentils, brown rice, chickpeas, oats, and fresh fruit. No oils, no meat, no dairy. Bright natural daylight, flat lay photography, Mediterranean mood"
+    - "Steam rising from a bowl of dark leafy greens — kale and spinach — drizzled with balsamic vinegar. A fork rests beside it. Intimate food photography, warm golden hour light, cinematic close-up"
+    - "A person confidently holding a fork over a vibrant plant-based meal, looking directly at the camera with quiet determination. Warm documentary portrait, shallow depth of field, empowering and calm"
