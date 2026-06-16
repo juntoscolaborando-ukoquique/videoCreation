@@ -9,8 +9,8 @@ Supports:
   - ffmpeg silent-audio fallback — used automatically when all TTS methods
     fail, or when ``edge-tts`` / ``openai`` are not installed
 
-Multi-language support via ``LANGUAGE_VOICES`` mapping. MD5-based audio
-caching in ``.cache/tts/`` prevents redundant re-generation of identical text.
+Multi-language support via config ``language_voices``. MD5-based audio
+caching in ``<project_root>/.cache/tts/`` prevents redundant re-generation of identical text.
 """
 
 import asyncio
@@ -21,21 +21,9 @@ import shutil
 import subprocess
 from pathlib import Path
 from typing import Optional
-from src import config_loader
-from src.schema import Language
+from src import config_loader as _default_config_loader
 
 logger = logging.getLogger(__name__)
-
-# Default edge_tts voice per language code.
-# Full list: https://speech.microsoft.com/portal/voicegallery
-LANGUAGE_VOICES: dict = {
-    Language.ENGLISH.value: "en-US-GuyNeural",
-    Language.SPANISH.value: "es-AR-TomasNeural",   # Rioplatense Spanish (Argentina)
-    Language.CHINESE.value: "zh-CN-YunxiNeural",
-    Language.FRENCH.value: "fr-FR-HenriNeural",
-    Language.GERMAN.value: "de-DE-ConradNeural",
-    Language.PORTUGUESE.value: "pt-BR-AntonioNeural",
-}
 
 
 # ---------------------------------------------------------------------------
@@ -43,15 +31,28 @@ LANGUAGE_VOICES: dict = {
 # ---------------------------------------------------------------------------
 
 def validate_voice_mappings():
-    """Ensure all languages defined in schema have a default voice mapping."""
-    for lang in Language:
-        if lang.value not in LANGUAGE_VOICES:
-            logger.error("Missing TTS voice mapping for language: %s", lang.name)
-            # We don't raise here to avoid breaking at startup, but it will log
-            # an error that should be caught during development/CI.
+    """Ensure all languages defined in schema have a default voice mapping in config.
 
-# Validate on module import
-validate_voice_mappings()
+    Raises
+    ------
+    RuntimeError
+        If any ``Language`` value is missing from ``tts.language_voices`` in
+        ``default_config.yaml``. Surfaces config gaps at startup rather than
+        letting them produce silent fallbacks at generation time.
+    """
+    from src.schema import Language
+    cfg_voices = _default_config_loader.tts().get("language_voices", {})
+    missing = [lang for lang in Language if lang.value not in cfg_voices]
+    if missing:
+        names = ", ".join(lang.name for lang in missing)
+        raise RuntimeError(
+            f"Missing TTS voice mapping(s) for: {names}. "
+            "Add the missing language codes to tts.language_voices in default_config.yaml."
+        )
+
+
+# Call explicitly at startup (e.g. from main.py) rather than on every import.
+# validate_voice_mappings()  — call manually if you want the startup check.
 
 
 # ---------------------------------------------------------------------------
@@ -65,6 +66,7 @@ def generate_speech(
     language: Optional[str] = None,
     method: Optional[str] = None,
     rate: Optional[str] = None,
+    config_loader=None,
 ) -> str:
     """Convert *text* to an audio file at *output_path*.
 
@@ -85,13 +87,16 @@ def generate_speech(
         TTS backend to use. Defaults to config value (edge_tts).
     rate:
         Speaking rate (e.g. "+0%", "-10%"). Overrides config default.
+    config_loader:
+        Optional ``ConfigLoader`` instance. Defaults to the module singleton.
 
     Returns
     -------
     str
         The absolute path to the generated audio file.
     """
-    cfg = config_loader.tts()
+    _cfg = config_loader or _default_config_loader
+    cfg = _cfg.tts()
     if method is None:
         method = cfg.get("method", "edge_tts")
 
@@ -102,9 +107,9 @@ def generate_speech(
     if voice:
         resolved_voice = voice
     elif language:
-        # Config language_voices override takes precedence over the hardcoded map
+        # Config language_voices is the single source of truth
         cfg_voices = cfg.get("language_voices", {})
-        resolved_voice = cfg_voices.get(language) or LANGUAGE_VOICES.get(language)
+        resolved_voice = cfg_voices.get(language)
         if resolved_voice:
             logger.info("TTS language='%s' → voice='%s'", language, resolved_voice)
         else:
@@ -115,7 +120,7 @@ def generate_speech(
 
     use_cache = cfg.get("use_cache", True)
     if use_cache:
-        cache_dir = Path(".cache/tts")
+        cache_dir = Path(__file__).resolve().parent.parent / ".cache" / "tts"
         cache_dir.mkdir(parents=True, exist_ok=True)
         
         # Include rate in cache key to ensure changes in speaking rate are reflected
@@ -124,18 +129,21 @@ def generate_speech(
         ext = Path(output_path).suffix or ".mp3"
         cache_file = cache_dir / f"{file_hash}{ext}"
         
-        if cache_file.exists():
+        if cache_file.exists() and cache_file.stat().st_size > 0:
             logger.info("TTS cache hit for '%s...' voice='%s' rate='%s'.", text[:20], resolved_voice, rate)
             shutil.copy2(cache_file, output_path)
             return output_path
+        elif cache_file.exists():
+            logger.warning("TTS cache file is empty, regenerating: %s", cache_file)
 
     Path(output_path).parent.mkdir(parents=True, exist_ok=True)
 
     res = None
+    success = False
     if method == "edge_tts":
-        res = _edge_tts(text, output_path, resolved_voice, rate)
+        res, success = _edge_tts(text, output_path, resolved_voice, rate)
     elif method == "openai":
-        res = _openai_tts(text, output_path, resolved_voice)
+        res, success = _openai_tts(text, output_path, resolved_voice)
     elif method in ("azure", "fish_tts"):
         raise NotImplementedError(
             f"TTS backend '{method}' is declared in the schema but not yet implemented. "
@@ -144,8 +152,9 @@ def generate_speech(
     else:
         logger.warning("TTS method '%s' not recognised — generating silent placeholder.", method)
         res = _generate_silent_audio(output_path)
+        success = False  # silent fallback must not be cached
 
-    if use_cache and res and Path(res).exists():
+    if use_cache and success and res and Path(res).exists():
         shutil.copy2(res, cache_file)
 
     return res
@@ -155,8 +164,11 @@ def generate_speech(
 # edge_tts backend
 # ---------------------------------------------------------------------------
 
-def _edge_tts(text: str, output_path: str, voice: str, rate: str = "+0%") -> str:
-    """Generate speech with Microsoft Edge TTS (free, no key)."""
+def _edge_tts(text: str, output_path: str, voice: str, rate: str = "+0%") -> tuple:
+    """Generate speech with Microsoft Edge TTS (free, no key).
+
+    Returns (path, success) tuple.
+    """
     try:
         import edge_tts as edge_tts_module  # type: ignore[import-untyped]
 
@@ -170,23 +182,20 @@ def _edge_tts(text: str, output_path: str, voice: str, rate: str = "+0%") -> str
             loop = None
 
         if loop is not None and loop.is_running():
-            # Already inside an event loop (e.g. Streamlit).
-            # Run the coroutine in a separate thread with its own loop.
             with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
-                # Use a lambda to ensure the coroutine is created inside the worker thread
                 future = pool.submit(lambda: asyncio.run(_run()))
                 future.result()
         else:
             asyncio.run(_run())
         logger.info("edge_tts audio saved → %s", output_path)
-        return output_path
+        return output_path, True
 
     except ImportError:
         logger.warning("edge_tts package not installed — falling back to silent audio.")
-        return _generate_silent_audio(output_path)
+        return _generate_silent_audio(output_path), False
     except Exception as exc:
         logger.error("edge_tts failed (%s) — falling back to silent audio.", exc)
-        return _generate_silent_audio(output_path)
+        return _generate_silent_audio(output_path), False
 
 
 # ---------------------------------------------------------------------------
@@ -215,15 +224,22 @@ def _generate_silent_audio(output_path: str, duration_s: float = 3.0) -> str:
 # openai backend
 # ---------------------------------------------------------------------------
 
-def _openai_tts(text: str, output_path: str, voice: str) -> str:
-    """Generate speech with OpenAI TTS API."""
+def _openai_tts(text: str, output_path: str, voice: str) -> tuple:
+    """Generate speech with OpenAI TTS API.
+
+    Returns (path, success) tuple.
+    """
     try:
         from openai import OpenAI
         client = OpenAI()
-        
+
         valid_voices = {"alloy", "echo", "fable", "onyx", "nova", "shimmer"}
-        oai_voice = voice if voice in valid_voices else "alloy"
-        
+        if voice not in valid_voices:
+            logger.warning("OpenAI voice '%s' is not valid — using 'alloy'. Valid voices: %s", voice, sorted(valid_voices))
+            oai_voice = "alloy"
+        else:
+            oai_voice = voice
+
         logger.info("Generating OpenAI TTS with voice='%s'", oai_voice)
         response = client.audio.speech.create(
             model="tts-1",
@@ -231,10 +247,10 @@ def _openai_tts(text: str, output_path: str, voice: str) -> str:
             input=text
         )
         response.stream_to_file(output_path)
-        return output_path
+        return output_path, True
     except ImportError:
         logger.error("openai package not installed. Run 'pip install openai'. Falling back to silent audio.")
-        return _generate_silent_audio(output_path)
+        return _generate_silent_audio(output_path), False
     except Exception as exc:
         logger.error("OpenAI TTS failed: %s — falling back to silent audio.", exc)
-        return _generate_silent_audio(output_path)
+        return _generate_silent_audio(output_path), False

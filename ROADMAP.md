@@ -50,6 +50,7 @@
 - [ ] Comprehensive error handling and retry logic
 - [ ] Structured logging with configurable log levels
 - [x] Resource cleanup (moviepy clip and audio handles closed after assembly)
+- [ ] Concurrent/async folder watcher execution (process multiple dropped configs simultaneously)
 - [ ] GPU-accelerated encoding (h264_nvenc)
 - [ ] Docker containerization
 - [ ] CI/CD pipeline with automated testing

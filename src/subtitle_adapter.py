@@ -9,7 +9,7 @@ import logging
 import re
 from typing import Dict, List, Optional
 
-from src import config_loader
+from src import config_loader as _default_config_loader
 
 logger = logging.getLogger(__name__)
 
@@ -19,6 +19,7 @@ def generate_subtitle_segments(
     total_duration: Optional[float] = None,
     words_per_second: Optional[float] = None,
     max_words_per_chunk: Optional[int] = None,
+    config_loader=None,
 ) -> List[Dict]:
     """Split *text* into timed subtitle segments.
 
@@ -32,13 +33,16 @@ def generate_subtitle_segments(
         Estimated speaking rate. Defaults to config value (``subtitles.words_per_second``).
     max_words_per_chunk:
         Maximum words per subtitle line. Defaults to config value (``subtitles.max_words_per_chunk``).
+    config_loader:
+        Optional ``ConfigLoader`` instance. Defaults to the module singleton.
 
     Returns
     -------
     list[dict]
         Each dict has keys ``text``, ``start``, ``end``, ``duration_estimate``.
     """
-    cfg = config_loader.subtitles()
+    _cfg = config_loader or _default_config_loader
+    cfg = _cfg.subtitles()
     if words_per_second is None:
         words_per_second = cfg.get("words_per_second", 2.5)
     if max_words_per_chunk is None:
@@ -59,7 +63,9 @@ def generate_subtitle_segments(
         while s_words:
             chunk_words = s_words[:max_words_per_chunk]
             s_words = s_words[max_words_per_chunk:]
-            chunks.append(" ".join(chunk_words))
+            chunk = " ".join(chunk_words)
+            if re.search(r'\w', chunk):  # skip chunks with no word characters (e.g. " . ")
+                chunks.append(chunk)
 
     if not chunks:
         chunks = [text.strip()]

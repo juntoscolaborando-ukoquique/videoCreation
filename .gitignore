@@ -21,8 +21,9 @@ __pycache__/
 .idea/
 *.swp
 
-# Temporary uploads
+# Temporary and generated directories
 temp_uploads/
+watcher_folders/
 
 # Cache
 .cache/

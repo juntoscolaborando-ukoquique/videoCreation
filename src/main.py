@@ -21,11 +21,11 @@ import yaml
 from src.schema import VideoConfiguration
 from src.orchestrator import VideoOrchestrator
 
-logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s: %(message)s")
 logger = logging.getLogger(__name__)
 
 
 def main() -> None:
+    logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s: %(message)s")
     parser = argparse.ArgumentParser(
         prog="videocreation",
         description="Generate a video from a YAML or JSON configuration file.",
@@ -77,7 +77,7 @@ def main() -> None:
     orchestrator = VideoOrchestrator(output_dir=args.output_dir)
     try:
         result = orchestrator.create_video(config)
-        print(f"\nDone: {result['output_path']}")
+        print(f"\nDone: {result.output_path}")
     except Exception as exc:
         logger.error("Video generation failed: %s", exc)
         sys.exit(1)

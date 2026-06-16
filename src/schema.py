@@ -1,8 +1,18 @@
 import warnings
+from dataclasses import dataclass
 
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, Field, field_serializer, model_validator, ConfigDict
 from typing import Dict, List, Optional
 from enum import Enum
+import base64
+
+
+@dataclass
+class PipelineResult:
+    output_path: str
+    title: str
+    format: str
+    subtitles_enabled: bool
 
 
 class OutputFormat(str, Enum):
@@ -61,8 +71,17 @@ class VisualAssetConfig(BaseModel):
         description="In-memory image uploads keyed by filename (used by the UI)",
     )
 
+    @field_serializer("uploaded_images")
+    def serialize_uploaded_images(self, value: Optional[Dict[str, bytes]]) -> Optional[Dict[str, str]]:
+        """Base64-encode bytes values so model_dump(mode='json') doesn't raise."""
+        if value is None:
+            return None
+        return {k: base64.b64encode(v).decode("ascii") for k, v in value.items()}
+
 
 class VideoConfiguration(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     title: str = Field(..., description="The title of the video")
     length_seconds: Optional[float] = Field(
         default=None, description="Desired video length in seconds"
@@ -104,6 +123,11 @@ class VideoConfiguration(BaseModel):
     tts_rate: Optional[str] = Field(
         default=None,
         description="Speaking rate for this video, e.g. '-10%' (overrides config default)",
+    )
+    tts_voice: Optional[str] = Field(
+        default=None,
+        description="Explicit TTS voice for this video, e.g. 'es-AR-ElenaNeural'. "
+                    "Overrides language default and config default.",
     )
 
     @model_validator(mode="after")

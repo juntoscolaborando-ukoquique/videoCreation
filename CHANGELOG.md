@@ -3,32 +3,39 @@
 ## [Unreleased]
 
 ### Added
-- `config/esselstyn_es.yaml` — new video config for "Prevenir y Revertir las Enfermedades del Corazón", based on Dr. Caldwell Esselstyn's lecture. Horizontal 16:9 orientation, Spanish TTS at `-8%` rate, 8 Cloudflare AI image prompts, subtitles enabled.
-
-### Added
-- `src/assembler_adapter.py` — `_ProgressLogger` class replaces the silent `logger=None` in `write_videofile`. Reports encoding progress every 10% milestone with estimated time remaining (e.g. `Encoding … 30% complete — ~5m 20s remaining`). Uses moviepy's `bars_callback(bar, total)` interface to convert frame counts to wall-clock ETA.
-
-### Fixed
-- `src/image_adapter.py` — `_try_cloudflare()` no longer aborts the entire batch on a single image failure. Each prompt now retries up to 3 times with exponential backoff (5s, 10s). NSFW/400 errors skip the image without retrying (permanent). Auth errors (401) abort the provider immediately. Images that exhaust retries are skipped individually and logged, allowing the rest of the batch to complete.
-
-### Added
-- `src/folder_watcher.py` — New Drop Folder Watcher daemon for asynchronous video generation integration.
-- `run_watcher.sh` — Convenience bash script to easily start the folder watcher.
-- State-based folder architecture (`watcher_folders/inbox`, `processing`, `done`, `failed`) for safe concurrent pipeline triggers.
-
-### Removed
-- `vendor/Lingo_PERSONAS/` — removed vendored Lingo_PERSONAS directory; the pipeline no longer depends on it.
-- `test_pollinations.py` and `test_sf.py` — deleted root-level smoke scripts that relied on the Lingo_PERSONAS vendor tree.
-- `src/lingo_utils.py` and `src/backends/lingo_assembler_backend.py` — dead code, no longer imported by anything in the pipeline.
-- `assembler_adapter` — removed `_NullBackend` and `_get_default_backend()`; `_local_moviepy_assemble` is now the unconditional default, `backend=` parameter kept for test injection.
-- `orchestrator.py` — removed `_sanitize_title()` alias; call site now uses `sanitize_filename()` directly.
+- `src/gateway.py` — new `VideoGateway` dataclass that bundles all external I/O callables (`generate_speech`, `generate_images`, `copy_images`, `assemble_video`, `generate_subtitles`, `burn_subtitles`, `modify_images`, `video_dimensions`). `VideoGateway.default(config_loader)` builds a production-wired instance as closures; config is resolved once at wiring time and never passed through the orchestrator again.
+- `src/schema.py` — `PipelineResult` dataclass replaces `Dict[str, Any]` as the return type of `VideoOrchestrator.create_video()`. Fields: `output_path`, `title`, `format`, `subtitles_enabled`. All call sites updated to attribute access.
+- `src/schema.py` — `VisualAssetConfig.uploaded_images` gains a `field_serializer` that base64-encodes `bytes` values so `model_dump(mode="json")` no longer raises `PydanticSerializationError`.
+- `src/image_providers/` — new package splitting the 380-line `image_adapter.py` into focused modules: `cloudflare.py`, `siliconflow.py`, `picsum.py`, `placeholder.py`, `_routing.py`, `_http.py`. `image_adapter.py` owns the routing layer (`generate_from_prompts`, `_native_ai_generation`) and imports helpers from the package, preserving `patch.object(image_adapter, ...)` compatibility in tests.
+- `src/image_providers/_http.py` — `_http_post_with_retry(url, headers, payload, timeout, max_retries)`: shared POST with exponential backoff, returning `Response` on 200, `None` on exhausted retries, raising `ProviderAuthError` on 401. Eliminates the duplicated retry logic that was in `_try_cloudflare` and `_try_siliconflow`.
+- `tests/test_integration.py` — real I/O integration test for `_local_moviepy_assemble` using actual ffmpeg and moviepy. Skipped by default (`@pytest.mark.integration`).
+- `pytest.ini` — registers the `integration` marker so `pytest -m "not integration"` skips the I/O test in CI.
 
 ### Changed
-- `src/schema.py` — `VideoConfiguration` now emits a `UserWarning` at construction time when `image_modification_instructions` is set, surfacing the `NotImplementedError` before the pipeline runs.
-- `src/subtitle_adapter.py` — logs a warning when `total_duration` is `None` so silent timing drift is visible in logs.
-- `src/image_adapter.py` — `.env` loading moved out of module scope into a lazy `_ensure_env()` helper; importing the module no longer has filesystem side effects.
-- `src/orchestrator.py` — documented that adapter config reads always go through the module-level singleton, regardless of the injected `ConfigLoader`.
-- Scrubbed remaining Lingo references from docstrings, comments, and test variable names across `src/` and `tests/`.
+- `src/orchestrator.py` — imports no adapter or config module directly. All I/O and config reads delegated to the injected `VideoGateway`. `_resolve_dimensions` now calls `self._gateway.video_dimensions()` — the last direct config import in the orchestrator is gone. Architecture: `main.py (wiring) → VideoGateway (closures) → VideoOrchestrator (pure pipeline logic) → VideoConfiguration / PipelineResult (data)`.
+- `src/orchestrator.py` — `create_video()` return type changed from `Dict[str, Any]` to `PipelineResult`.
+- `src/orchestrator.py` — `assembler_backend` legacy parameter is forwarded as `backend=` to `assemble_video` on every call; `subtitle_backend` legacy parameter is a documented no-op (subtitle backend is now wired inside `VideoGateway`).
+- `src/tts_adapter.py`, `src/image_adapter.py`, `src/subtitle_adapter.py`, `src/assembler_adapter.py`, `src/backends/ffmpeg_subtitle_backend.py` — all public functions accept an optional `config_loader` parameter defaulting to the module singleton. The gateway's closures capture `config_loader` at construction time.
+- `src/tts_adapter.py` — `_edge_tts` and `_openai_tts` return `(path, bool)` success tuple. Cache written only on `success=True`, preventing silent fallback audio from poisoning the TTS cache. Zero-byte cache entries are detected and skipped on read, triggering regeneration.
+- `src/tts_adapter.py` — `LANGUAGE_VOICES` hardcoded dict removed. `validate_voice_mappings()` reads from `config_loader.tts().language_voices` and raises `RuntimeError` on missing entries. No longer called at module import time — call explicitly at startup if the check is wanted.
+- `src/tts_adapter.py` — cache directory resolved to `<project_root>/.cache/tts/` via `Path(__file__).resolve()`, stable regardless of working directory.
+- `src/tts_adapter.py` — `_openai_tts` logs a warning when an unsupported voice name is replaced with `"alloy"`.
+- `src/subtitle_adapter.py` — chunk loop skips chunks with no word characters (e.g. a lone `"."` from input like `" . "`), preventing near-zero-duration segments.
+- `src/backends/ffmpeg_subtitle_backend.py` — all production subtitle functions consolidated from the deleted `src/subtitle_renderer.py`. `_segments_to_ass` accepts an optional `config_loader` completing the DI chain through the subtitle stack. `_color_to_ass` logs at DEBUG for unrecognised color strings.
+- `src/assembler_adapter.py` — `ImageClip` list wrapped in `try/finally`; clips closed before audio in the correct dependency order. `_local_moviepy_assemble` accepts `config_loader` so `fps` is read from the injected config.
+- `tests/test_orchestrator.py` — completely rewritten. All tests inject a `VideoGateway` via `VideoOrchestrator(gateway=gw)`. Zero `patch()` calls against module internals. `_make_gateway(**overrides)` helper allows per-test callable injection.
+- `tests/test_subtitle_renderer.py` — `_render_subtitle_frame_legacy_test_only` moved from `src/subtitle_renderer.py` into this test file.
+- `tests/test_adapters.py` — `patch` targets updated to `src.*._default_config_loader.*`. `_edge_tts` mock return values updated to `(str, bool)` tuple.
+
+### Fixed
+- `src/backends/ffmpeg_subtitle_backend.py` — `_color_to_ass` silently returned white for 3-char hex like `#F00`. A 4-char branch now expands `#RGB` to `#RRGGBB` before the 7-char branch.
+- `src/orchestrator.py` — missing `Dict` import in `from typing import` caused a latent `NameError` when `subtitles_enabled=True`.
+
+### Removed
+- `src/subtitle_renderer.py` — consolidated into `src/backends/ffmpeg_subtitle_backend.py`. Call chain is now `orchestrator → VideoGateway → FFmpegSubtitleBackend → ffmpeg`.
+- `src/backends/ffmpeg_subtitle_backend.py` — removed `_color_to_ass_warn` dead-code stub.
+
+
 
 ## [0.3.0] - 2026-06-08
 

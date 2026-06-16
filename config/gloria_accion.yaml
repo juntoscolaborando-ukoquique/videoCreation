@@ -14,11 +14,7 @@ orientation: vertical
 subtitles_enabled: true
 output_format: "mp4"
 tts_rate: "-12%"
-
-# ⚠️  VOZ FEMENINA REQUERIDA:
-# Antes de correr este config, editá default_config.yaml y cambiá:
-#   language_voices:
-#     es: "es-AR-ElenaNeural"    # femenina, cálida — reemplaza es-AR-TomasNeural
+tts_voice: "es-AR-ElenaNeural"
 
 # background_music: "assets/music/guitarra_suave.mp3"
 

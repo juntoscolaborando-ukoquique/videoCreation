@@ -1,16 +1,13 @@
-# Minimal smoke-test — confirms all 5 patches work end-to-end
-#
-# Run with:
-#   python -m src.main --config config/smoke_test.yaml
-
-title: "Patch Verification"
+title: "Smoke Test Video"
+speech_content: "This is a quick smoke test to verify the full pipeline works correctly after recent changes."
 language: en
-speech_content: |
-  The five patches have been applied. The pipeline is working correctly.
-visual_assets:
-  asset_type: "text_prompts"
-  prompts:
-    - "A green checkmark on a dark background, minimal"
+orientation: vertical
 subtitles_enabled: true
-output_format: "mp4"
-orientation: "vertical"
+output_format: mp4
+image_engine: picsum
+
+visual_assets:
+  asset_type: text_prompts
+  prompts:
+    - "A calm mountain landscape at sunrise"
+    - "A quiet forest path in autumn"

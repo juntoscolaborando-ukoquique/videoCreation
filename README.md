@@ -37,6 +37,7 @@ A configurable video generation pipeline that accepts user-defined content — s
 | `src/config_loader.py` | Reads and caches `config/default_config.yaml` |
 | `src/ui.py` | Streamlit UI for interactive video generation |
 | `src/main.py` | CLI entry point supporting YAML/JSON execution |
+| `src/folder_watcher.py` | Directory watching daemon for asynchronous pipeline integration |
 | `src/__main__.py` | Package entry point relaying to `src.main` |
 | `config/default_config.yaml` | Default TTS/image/video/subtitle settings |
 
@@ -86,6 +87,20 @@ The UI supports:
 - **Visual Asset Management**: Upload local images directly or provide AI prompts.
 - **Real-time Logs**: Monitor the generation progress directly in the browser.
 - **Video Preview**: Watch the generated video immediately after assembly.
+
+### File-Based Integration API (Drop Folder)
+
+To keep `VideoCreation` completely decoupled from any external applications or pipelines, we provide an asynchronous Drop Folder architecture. `VideoCreation` has zero knowledge of the applications triggering it. Any project in any language can simply generate a valid `.yaml` configuration and drop it into the inbox.
+
+To start the watcher daemon:
+
+```bash
+./run_watcher.sh
+```
+
+This monitors the `watcher_folders/inbox/` directory. External projects simply write their `.yaml` or `.json` configuration file into that folder. The watcher automatically picks it up, moves it to `watcher_folders/processing/`, generates the video, and moves the config to `watcher_folders/done/` (or `watcher_folders/failed/` on error). 
+
+This guarantees strict separation of concerns, prevents dependency conflicts, and allows external projects to trigger video rendering without blocking their own execution.
 
 ### Programmatic API
 
@@ -194,6 +209,7 @@ VideoCreation/
 │   ├── subtitle_adapter.py
 │   ├── subtitle_renderer.py
 │   ├── assembler_adapter.py
+│   ├── folder_watcher.py
 │   ├── backends/
 │   │   ├── __init__.py               # AssemblerBackend + SubtitleBackend protocols
 │   └── config_loader.py
@@ -205,7 +221,9 @@ VideoCreation/
 │   ├── test_subtitle_renderer.py
 │   └── test_orchestrator.py
 ├── output/                    # Generated videos (gitignored)
+├── watcher_folders/           # State folders for the drop watcher daemon (inbox, processing, etc.)
 ├── run_test_video.py
+├── run_watcher.sh
 ├── Initial_prompt.md
 ├── ARCH_TO_DO.md
 ├── CHANGELOG.md

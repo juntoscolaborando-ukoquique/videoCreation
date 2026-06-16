@@ -1,8 +1,13 @@
 """
-Video Orchestrator — main pipeline that ties all adapters together.
+Video Orchestrator — pure pipeline logic.
+
+The orchestrator knows only ``VideoGateway`` (what to call) and
+``VideoConfiguration`` / ``PipelineResult`` (the data contracts).
+It imports no adapter module directly; all I/O is injected via the gateway.
 
 Usage::
 
+    from src.gateway import VideoGateway
     from src.orchestrator import VideoOrchestrator
     from src.schema import VideoConfiguration, VisualAssetConfig, VisualAssetType
 
@@ -14,24 +19,19 @@ Usage::
             prompts=["A sunny beach"],
         ),
     )
-    # Recommended: Use an absolute path for output_dir to ensure stability
     orchestrator = VideoOrchestrator(output_dir="output")
     result = orchestrator.create_video(config)
-    print(result["output_path"])
+    print(result.output_path)
 """
 
 import logging
 import os
 import shutil
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Dict, List, Optional
 
-from src.schema import VideoConfiguration, VisualAssetType, Orientation
-from src import tts_adapter, image_adapter, subtitle_adapter, assembler_adapter
-from src import config_loader as _default_config_loader
-from src.config_loader import ConfigLoader
-from src.backends import AssemblerBackend, SubtitleBackend
-from src.backends.ffmpeg_subtitle_backend import FFmpegSubtitleBackend
+from src.schema import VideoConfiguration, VisualAssetType, Orientation, PipelineResult
+from src.gateway import VideoGateway
 from src.utils import sanitize_filename
 
 logger = logging.getLogger(__name__)
@@ -40,140 +40,115 @@ logger = logging.getLogger(__name__)
 class VideoOrchestrator:
     """End-to-end video creation pipeline.
 
-    Each step delegates to a specialised adapter module so that
-    backends can be swapped independently.
+    All external I/O is performed through the injected ``VideoGateway``.
+    The orchestrator contains no adapter imports and reads no config directly.
     """
 
     def __init__(
         self,
         output_dir: str = "output",
-        subtitle_backend: SubtitleBackend = None,
-        assembler_backend: AssemblerBackend = None,
-        config_loader: ConfigLoader = None,
+        gateway: Optional[VideoGateway] = None,
+        # Legacy parameters kept for backward compatibility —
+        # prefer passing a fully-wired VideoGateway instead.
+        config_loader=None,
+        subtitle_backend=None,
+        assembler_backend=None,
     ):
         """
         Parameters
         ----------
         output_dir:
-            Base directory for all output files. Relative paths are resolved
-            against the current working directory at instantiation time — use
-            an absolute path when calling from threads or subprocesses.
-        subtitle_backend:
-            Backend used for subtitle burn-in. Defaults to
-            ``FFmpegSubtitleBackend``. Pass an alternative to swap renderers
-            or inject a mock in tests.
-        assembler_backend:
-            Backend used for video assembly. Defaults to ``None``, which
-            causes ``assemble_video`` to use the local moviepy implementation.
-            Pass an alternative to swap assemblers or inject a mock in tests.
+            Base directory for all output files. Use an absolute path when
+            calling from threads or subprocesses.
+        gateway:
+            Pre-wired ``VideoGateway``. When ``None``, ``VideoGateway.default()``
+            is called with *config_loader* (if provided) to build one.
         config_loader:
-            ``ConfigLoader`` instance to use for this orchestrator. Defaults
-            to the module-level singleton. Only affects orchestrator-level
-            config reads (e.g. output dimensions). Note: adapters
-            (tts_adapter, image_adapter, etc.) read config from the
-            module-level singleton directly and are not affected by this
-            parameter. In practice this is fine — there is only ever one
-            config file per process. For parallel batch scenarios, use
-            separate processes rather than threads.
+            Passed to ``VideoGateway.default()`` when *gateway* is ``None``.
+            Ignored when a gateway is supplied directly.
+        subtitle_backend:
+            Ignored in all cases — subtitle backend is now wired inside
+            ``VideoGateway.default()``. Pass a custom *gateway* to swap it.
+        assembler_backend:
+            When *gateway* is ``None``, forwarded as ``backend=`` to
+            ``assemble_video`` on every call, allowing the moviepy local path
+            to be replaced by an alternative ``AssemblerBackend`` without a
+            full custom gateway. Ignored when a gateway is supplied directly.
         """
         self.output_dir = Path(output_dir)
         self.output_dir.mkdir(parents=True, exist_ok=True)
-        self._subtitle_backend: SubtitleBackend = (
-            subtitle_backend if subtitle_backend is not None else FFmpegSubtitleBackend()
-        )
-        self._assembler_backend: Optional[AssemblerBackend] = assembler_backend
-        self._config = config_loader if config_loader is not None else _default_config_loader
+
+        if gateway is not None:
+            self._gateway = gateway
+        else:
+            self._gateway = VideoGateway.default(config_loader=config_loader)
+
+        # Store the assembler_backend so the default gateway can forward it
+        # when the legacy parameter is used without a custom gateway.
+        self._assembler_backend = assembler_backend
 
     # ------------------------------------------------------------------
     # Public
     # ------------------------------------------------------------------
 
-    def create_video(self, config: VideoConfiguration) -> Dict[str, Any]:
-        """Run the full pipeline and return a result dict.
-
-        Returns
-        -------
-        dict
-            Keys: ``output_path``, ``title``, ``format``, ``subtitles_enabled``.
-            The final video is always at ``output_path`` inside ``output_dir``.
-        """
+    def create_video(self, config: VideoConfiguration) -> PipelineResult:
+        """Run the full pipeline and return a ``PipelineResult``."""
         logger.info("=== Starting video generation: %s ===", config.title)
 
         # 1. Prepare workspace
         workspace = self.output_dir / sanitize_filename(config.title)
         workspace.mkdir(parents=True, exist_ok=True)
 
-        # 2. Generate audio from speech text
+        # 2. Generate TTS audio
         audio_path = str(workspace / "speech.mp3")
         logger.info("[1/4] Generating TTS audio …")
-        tts_adapter.generate_speech(
-            text=config.speech_content,
-            output_path=audio_path,
+        self._gateway.generate_speech(
+            config.speech_content,
+            audio_path,
+            voice=config.tts_voice,
             language=config.language.value,
             method=config.tts_backend.value if config.tts_backend else None,
             rate=config.tts_rate,
         )
 
-        # Determine orientation dimensions
-        cfg = self._config.video()
-        base_w = cfg.get("width", 1080)
-        base_h = cfg.get("height", 1920)
-        v_width, v_height = min(base_w, base_h), max(base_w, base_h)
-        
-        if config.orientation == Orientation.HORIZONTAL:
-            final_width, final_height = v_height, v_width
-            aspect_ratio = "16:9"
-        else:
-            final_width, final_height = v_width, v_height
-            aspect_ratio = "9:16"
+        # 3. Resolve orientation dimensions
+        # Read dimensions from config via the gateway's closure; fall back to
+        # defaults here so the orchestrator stays config-free.
+        final_width, final_height, aspect_ratio = self._resolve_dimensions(config)
 
-        # 3. Prepare visual assets
+        # 4. Prepare visual assets
         logger.info("[2/4] Preparing visual assets …")
         visual_files = self._prepare_visuals(config, str(workspace), aspect_ratio, final_width, final_height)
 
         if not visual_files:
-            raise ValueError(
-                "No visual assets available. Provide images or text prompts."
-            )
+            raise ValueError("No visual assets available. Provide images or text prompts.")
 
-        # 4. (Optional) Modify images with AI
+        # 5. (Optional) Modify images with AI
         if config.image_modification_instructions:
             logger.info("[+] Applying image modifications …")
-            visual_files = image_adapter.modify_images(
+            visual_files = self._gateway.modify_images(
                 visual_files, config.image_modification_instructions,
             )
         else:
             logger.debug("Image modifications skipped (no instructions provided).")
 
-        # 5. Generate subtitle segments
+        # 6. Generate subtitle segments
         segments: List[Dict] = []
         if config.subtitles_enabled:
             logger.info("[3/4] Generating subtitle segments …")
-            
-            # Determine total duration for subtitle scaling
-            total_duration = config.length_seconds
-            if total_duration is None:
-                try:
-                    from moviepy import AudioFileClip
-                    audio = AudioFileClip(audio_path)
-                    total_duration = audio.duration
-                    audio.close()
-                    logger.info("Measured audio duration: %.2fs", total_duration)
-                except Exception as exc:
-                    logger.warning("Could not measure audio duration (%s) — falling back to estimation.", exc)
-
-            segments = subtitle_adapter.generate_subtitle_segments(
-                text=config.speech_content,
+            total_duration = self._resolve_audio_duration(config, audio_path)
+            segments = self._gateway.generate_subtitles(
+                config.speech_content,
                 total_duration=total_duration,
             )
         else:
             logger.debug("Subtitles disabled — skipping.")
 
-        # 6. Assemble final video
+        # 7. Assemble final video
         logger.info("[4/4] Assembling final video …")
-        output_path = assembler_adapter.assemble_video(
-            audio_path=audio_path,
-            visual_files=visual_files,
+        output_path = self._gateway.assemble_video(
+            audio_path,
+            visual_files,
             title=config.title,
             output_dir=str(workspace),
             output_format=config.output_format.value,
@@ -184,27 +159,15 @@ class VideoOrchestrator:
         )
 
         if not output_path or not os.path.exists(output_path):
-            raise RuntimeError(
-                f"Video assembly failed: output file not found at {output_path}"
-            )
+            raise RuntimeError(f"Video assembly failed: output file not found at {output_path}")
 
-        # 7. (Optional) Burn subtitles onto the assembled video
+        # 8. (Optional) Burn subtitles
         if config.subtitles_enabled and segments:
-            logger.info("[+] Burning subtitles …")
-            output_filename = f"{sanitize_filename(config.title)}.{config.output_format.value}"
-            output_path = self._subtitle_backend.burn_subtitles(
-                video_path=output_path,
-                segments=segments,
-                output_dir=str(workspace),
-                output_filename=output_filename,
-                output_format=config.output_format.value,
-                width=final_width,
-                height=final_height,
+            output_path = self._burn_subtitles(
+                output_path, segments, workspace, config, final_width, final_height,
             )
-            if not output_path or not os.path.exists(output_path):
-                raise RuntimeError("Subtitle burn-in failed: output file not found.")
 
-        # 8. Promote final video out of the workspace into output_dir
+        # 9. Promote final video out of workspace into output_dir
         final_filename = Path(output_path).name
         final_path = self.output_dir / final_filename
         if Path(output_path).resolve() != final_path.resolve():
@@ -214,43 +177,91 @@ class VideoOrchestrator:
 
         logger.info("=== Video complete: %s ===", output_path)
 
-        # 9. Cleanup workspace temporary files
+        # 10. Cleanup workspace
         self._cleanup_workspace(workspace)
 
-        return {
-            "output_path": output_path,
-            "title": config.title,
-            "format": config.output_format.value,
-            "subtitles_enabled": config.subtitles_enabled,
-        }
+        return PipelineResult(
+            output_path=output_path,
+            title=config.title,
+            format=config.output_format.value,
+            subtitles_enabled=config.subtitles_enabled,
+        )
 
     # ------------------------------------------------------------------
-    # Internal
+    # Internal helpers
     # ------------------------------------------------------------------
+
+    def _resolve_dimensions(self, config: VideoConfiguration):
+        """Return (width, height, aspect_ratio) based on orientation."""
+        base_w, base_h = self._gateway.video_dimensions()
+        v_width, v_height = min(base_w, base_h), max(base_w, base_h)
+        if config.orientation == Orientation.HORIZONTAL:
+            return v_height, v_width, "16:9"
+        return v_width, v_height, "9:16"
+
+    def _resolve_audio_duration(self, config: VideoConfiguration, audio_path: str) -> float:
+        """Return audio duration in seconds, raising if it cannot be determined."""
+        total_duration = config.length_seconds
+        if total_duration is None:
+            try:
+                from moviepy import AudioFileClip
+                audio = AudioFileClip(audio_path)
+                total_duration = audio.duration
+                audio.close()
+                logger.info("Measured audio duration: %.2fs", total_duration)
+            except Exception as exc:
+                logger.warning("Could not measure audio duration (%s).", exc)
+
+        if total_duration is None:
+            raise RuntimeError(
+                "Could not determine video duration: set 'length_seconds' in your config "
+                "or ensure the generated audio file is readable by ffmpeg."
+            )
+        return total_duration
+
+    def _burn_subtitles(
+        self,
+        output_path: str,
+        segments: List[Dict],
+        workspace: Path,
+        config: VideoConfiguration,
+        width: int,
+        height: int,
+    ) -> str:
+        logger.info("[+] Burning subtitles …")
+        output_filename = f"{sanitize_filename(config.title)}.{config.output_format.value}"
+        burned = self._gateway.burn_subtitles(
+            output_path,
+            segments,
+            output_dir=str(workspace),
+            output_filename=output_filename,
+            output_format=config.output_format.value,
+            width=width,
+            height=height,
+        )
+        if not burned or not os.path.exists(burned):
+            raise RuntimeError("Subtitle burn-in failed: output file not found.")
+
+        # Rename to the clean title-based filename if the backend added a prefix.
+        clean_path = workspace / output_filename
+        if clean_path.exists() and clean_path.resolve() != Path(burned).resolve():
+            clean_path.unlink()
+        if Path(burned).resolve() != clean_path.resolve():
+            shutil.move(burned, clean_path)
+            burned = str(clean_path)
+        return burned
 
     def _cleanup_workspace(self, workspace: Path) -> None:
-        """Remove transient files from the workspace directory.
-
-        Deletes the ``temp/`` subdirectory (if present) and any moviepy
-        scratch files matching ``*TEMP_MPY*``. All other workspace contents
-        (audio, visuals) are left in place.
-        """
         temp_dir = workspace / "temp"
         if temp_dir.exists():
-            logger.info("Cleaning up temporary directory: %s", temp_dir)
             shutil.rmtree(temp_dir, ignore_errors=True)
-        
-        # Add any other transient files to cleanup here if needed
-        # For example, moviepy often leaves .mp3TEMP_MPY_wvf_snd.mp4 files
         for transient in workspace.glob("*TEMP_MPY*"):
             try:
                 transient.unlink()
-                logger.info("Removed transient file: %s", transient)
-            except Exception as e:
-                logger.warning("Could not remove transient file %s: %s", transient, e)
+            except Exception as exc:
+                logger.warning("Could not remove transient file %s: %s", transient, exc)
 
     def _save_uploaded_images(self, uploads: dict, dest_dir: str) -> List[str]:
-        """Write in-memory image bytes to *dest_dir* and return the file paths."""
         saved: List[str] = []
         for filename, data in uploads.items():
             path = os.path.join(dest_dir, filename)
@@ -261,32 +272,26 @@ class VideoOrchestrator:
         return saved
 
     def _prepare_visuals(
-        self, config: VideoConfiguration, workspace: str, aspect_ratio: str, width: int, height: int
+        self, config: VideoConfiguration, workspace: str,
+        aspect_ratio: str, width: int, height: int,
     ) -> List[str]:
-        """Resolve visual assets — either copy provided images or generate from prompts."""
         visuals_dir = os.path.join(workspace, "visuals")
         os.makedirs(visuals_dir, exist_ok=True)
 
         if config.visual_assets.asset_type == VisualAssetType.IMAGE_SEQUENCE:
             images = list(config.visual_assets.images or [])
-
-            # Persist any in-memory uploads (from UI) to the workspace.
             if config.visual_assets.uploaded_images:
-                images.extend(
-                    self._save_uploaded_images(config.visual_assets.uploaded_images, visuals_dir)
-                )
-
+                images.extend(self._save_uploaded_images(config.visual_assets.uploaded_images, visuals_dir))
             if not images:
                 logger.warning("IMAGE_SEQUENCE selected but no images provided.")
                 return []
-            return image_adapter.copy_provided_images(images, visuals_dir)
+            return self._gateway.copy_images(images, visuals_dir)
 
-        # TEXT_PROMPTS
         prompts = config.visual_assets.prompts or []
         if not prompts:
             logger.warning("TEXT_PROMPTS selected but no prompts provided.")
             return []
-        return image_adapter.generate_from_prompts(
+        return self._gateway.generate_images(
             prompts,
             visuals_dir,
             style=config.image_style,

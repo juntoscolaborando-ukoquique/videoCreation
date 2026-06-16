@@ -26,7 +26,7 @@ class TestTTSAdapter:
     def test_openai_tts_called(self, tmp_path):
         """Passing method='openai' should call _openai_tts."""
         out = str(tmp_path / "openai.mp3")
-        with patch.object(tts_adapter, "_openai_tts", return_value=out) as mock_openai:
+        with patch.object(tts_adapter, "_openai_tts", return_value=(out, True)) as mock_openai:
             tts_adapter.generate_speech("Hello", out, method="openai")
         mock_openai.assert_called_once()
 
@@ -34,28 +34,21 @@ class TestTTSAdapter:
         """TTS should use cache on subsequent identical requests."""
         out1 = str(tmp_path / "out1.mp3")
         out2 = str(tmp_path / "out2.mp3")
-        
-        with patch.object(tts_adapter, "_edge_tts", return_value=out1) as mock_edge, \
-             patch("src.tts_adapter.config_loader.tts", return_value={"use_cache": True, "method": "edge_tts"}):
-            
+
+        # Create a non-empty file so the cache size guard passes
+        open(out1, "wb").write(b"fake-audio-data")
+
+        with patch.object(tts_adapter, "_edge_tts", return_value=(out1, True)) as mock_edge, \
+             patch("src.tts_adapter._default_config_loader.tts", return_value={"use_cache": True, "method": "edge_tts"}):
+
             import uuid
             unique_text = f"Cache Test {uuid.uuid4()}"
-            # First call creates the cache
+            # First call — populates the cache
             tts_adapter.generate_speech(unique_text, out1, voice="en-US-GuyNeural")
             mock_edge.assert_called_once()
-            
-            # Reset mock
+
             mock_edge.reset_mock()
-            
-            # Create a fake output from the first call so shutil.copy2 doesn't fail
-            if not os.path.exists(out1):
-                open(out1, "w").close()
-            
-            # Re-run first call properly so cache actually saves (the mock returned out1, we need out1 to exist)
-            tts_adapter.generate_speech(unique_text, out1, voice="en-US-GuyNeural")
-            
-            mock_edge.reset_mock()
-            
+
             # Second call should hit the cache and NOT call edge_tts
             tts_adapter.generate_speech(unique_text, out2, voice="en-US-GuyNeural")
             mock_edge.assert_not_called()
@@ -78,21 +71,21 @@ class TestTTSAdapter:
     def test_language_resolves_to_correct_voice(self, tmp_path):
         """Language code should map to the correct edge_tts voice."""
         out = str(tmp_path / "es.mp3")
-        with patch.object(tts_adapter, "_edge_tts", return_value=out) as mock_tts:
+        with patch.object(tts_adapter, "_edge_tts", return_value=(out, True)) as mock_tts:
             tts_adapter.generate_speech("Hola", out, language="es")
         mock_tts.assert_called_once_with("Hola", out, "es-AR-TomasNeural", "+0%")
 
     def test_explicit_voice_overrides_language(self, tmp_path):
         """An explicit voice parameter must take precedence over language."""
         out = str(tmp_path / "override.mp3")
-        with patch.object(tts_adapter, "_edge_tts", return_value=out) as mock_tts:
+        with patch.object(tts_adapter, "_edge_tts", return_value=(out, True)) as mock_tts:
             tts_adapter.generate_speech("Hello", out, voice="en-GB-RyanNeural", language="es")
         mock_tts.assert_called_once_with("Hello", out, "en-GB-RyanNeural", "+0%")
 
     def test_unknown_language_falls_back_to_config_voice(self, tmp_path):
         """An unrecognised language code should fall back to the config default voice."""
         out = str(tmp_path / "unknown_lang.mp3")
-        with patch.object(tts_adapter, "_edge_tts", return_value=out) as mock_tts:
+        with patch.object(tts_adapter, "_edge_tts", return_value=(out, True)) as mock_tts:
             tts_adapter.generate_speech("Hello", out, language="xx")
         # Should use the config default, not crash
         mock_tts.assert_called_once()
@@ -100,12 +93,12 @@ class TestTTSAdapter:
         assert isinstance(called_voice, str) and len(called_voice) > 0
 
     def test_config_language_voices_override_hardcoded_map(self, tmp_path):
-        """language_voices in config should override the hardcoded LANGUAGE_VOICES map."""
+        """language_voices in config is the single source of truth for voice resolution."""
         out = str(tmp_path / "config_override.mp3")
-        with patch("src.tts_adapter.config_loader.tts", return_value={
+        with patch("src.tts_adapter._default_config_loader.tts", return_value={
             "method": "edge_tts",
             "language_voices": {"es": "es-MX-JorgeNeural"},
-        }), patch.object(tts_adapter, "_edge_tts", return_value=out) as mock_tts:
+        }), patch.object(tts_adapter, "_edge_tts", return_value=(out, True)) as mock_tts:
             tts_adapter.generate_speech("Hola", out, language="es")
         mock_tts.assert_called_once_with("Hola", out, "es-MX-JorgeNeural", "+0%")
 
@@ -179,7 +172,7 @@ class TestImageAdapter:
     def test_use_picsum_config_flag_activates_picsum(self, tmp_path):
         """use_picsum:true in config should auto-route to Picsum when no explicit engine is passed."""
         out_dir = str(tmp_path / "imgs")
-        with patch("src.image_adapter.config_loader.image", return_value={"use_picsum": True}), \
+        with patch("src.image_adapter._default_config_loader.image", return_value={"use_picsum": True}), \
              patch.object(image_adapter, "_picsum_batch", return_value=["stock.jpg"]) as mock_picsum, \
              patch.object(image_adapter, "_native_ai_generation") as mock_ai:
             paths = image_adapter.generate_from_prompts(["test"], out_dir)
@@ -187,6 +180,65 @@ class TestImageAdapter:
         mock_picsum.assert_called_once()
         mock_ai.assert_not_called()
         assert paths == ["stock.jpg"]
+
+    def test_config_engine_used_when_no_explicit_engine(self, tmp_path):
+        """image.engine in config should be used when no explicit engine is passed."""
+        out_dir = str(tmp_path / "imgs")
+        with patch("src.image_adapter._default_config_loader.image", return_value={"engine": "cloudflare"}), \
+             patch.object(image_adapter, "_native_ai_generation", return_value=["gen.png"]) as mock_ai:
+            paths = image_adapter.generate_from_prompts(["test"], out_dir)
+        mock_ai.assert_called_once()
+        _, kwargs = mock_ai.call_args
+        assert kwargs.get("preferred_engine") == "cloudflare"
+        assert paths == ["gen.png"]
+
+
+# =========================================================================== #
+# SiliconFlow retry behaviour
+# =========================================================================== #
+
+class TestSiliconFlowRetry:
+    def test_continues_after_single_failure(self, tmp_path):
+        """A transient failure on one prompt must not abort the rest of the batch."""
+        out_dir = str(tmp_path / "imgs")
+        os.makedirs(out_dir, exist_ok=True)
+        call_count = 0
+
+        def fake_post(*args, **kwargs):
+            nonlocal call_count
+            call_count += 1
+            if call_count == 1:
+                raise Exception("transient error")
+            mock_resp = MagicMock()
+            mock_resp.status_code = 200
+            mock_resp.json.return_value = {"data": [{"url": "http://x.com/img.png"}]}
+            return mock_resp
+
+        fake_img_resp = MagicMock()
+        fake_img_resp.status_code = 200
+        fake_img_resp.content = b"PNG_DATA"
+
+        with patch("src.image_adapter.requests.post", side_effect=fake_post), \
+             patch("src.image_adapter.requests.get", return_value=fake_img_resp), \
+             patch.dict("os.environ", {"SILICONFLOW_API_KEY": "fake"}):
+            image_adapter._try_siliconflow(["prompt1", "prompt2"], out_dir, 100, 100, "style")
+
+        assert call_count >= 2  # both prompts were attempted
+
+    def test_auth_error_aborts_provider(self, tmp_path):
+        """A 401 must cause an immediate return of [] without retrying."""
+        out_dir = str(tmp_path / "imgs")
+        os.makedirs(out_dir, exist_ok=True)
+
+        mock_resp = MagicMock()
+        mock_resp.status_code = 401
+        mock_resp.text = "Unauthorized"
+
+        with patch("src.image_adapter.requests.post", return_value=mock_resp), \
+             patch.dict("os.environ", {"SILICONFLOW_API_KEY": "fake"}):
+            result = image_adapter._try_siliconflow(["prompt1", "prompt2"], out_dir, 100, 100, "style")
+
+        assert result == []
 
 
 # =========================================================================== #

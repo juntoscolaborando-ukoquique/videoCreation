@@ -36,8 +36,8 @@ class _QueueHandler(logging.Handler):
 def _run_pipeline(config: VideoConfiguration, result_queue: queue.Queue, log_queue: queue.Queue) -> None:
     handler = _QueueHandler(log_queue)
     handler.setFormatter(logging.Formatter("%(levelname)s %(name)s: %(message)s"))
-    src_logger = logging.getLogger("src")  # ← solo logs de este proyecto
-    src_logger.addHandler(handler)
+    root_logger = logging.getLogger()
+    root_logger.addHandler(handler)
     try:
         orchestrator = VideoOrchestrator(output_dir=str(project_root / "output"))
         result = orchestrator.create_video(config)
@@ -45,7 +45,7 @@ def _run_pipeline(config: VideoConfiguration, result_queue: queue.Queue, log_que
     except Exception as exc:
         result_queue.put(("err", exc))
     finally:
-        src_logger.removeHandler(handler)
+        root_logger.removeHandler(handler)
 
 
 # ---------------------------------------------------------------------------
@@ -244,9 +244,9 @@ def main() -> None:
             st.error(f"Pipeline failed: {payload}")
         else:
             result = payload
-            st.success(f"Done — saved to: {result['output_path']}")
-            if result["format"] in ("mp4", "webm"):
-                with open(result["output_path"], "rb") as f:
+            st.success(f"Done — saved to: {result.output_path}")
+            if result.format in ("mp4", "webm"):
+                with open(result.output_path, "rb") as f:
                     st.video(f.read())
             else:
                 st.info("Format not supported for in-browser playback — check the output directory.")
